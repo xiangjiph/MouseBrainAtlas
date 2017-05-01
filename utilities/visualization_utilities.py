@@ -9,8 +9,6 @@ sys.path.append(os.path.join(os.environ['REPO_DIR'], 'utilities'))
 from utilities2015 import *
 from data_manager import *
 
-# from joblib import Parallel, delayed
-
 def patch_boxes_overlay_on(bg, downscale_factor, locs, patch_size, colors=None, stack=None, sec=None):
     """
     Assume bg has the specified downscale_factor.
@@ -18,9 +16,11 @@ def patch_boxes_overlay_on(bg, downscale_factor, locs, patch_size, colors=None, 
 
     if bg == 'original':
         bg = imread(DataManager.get_image_filepath(stack=stack, section=sec, version='compressed'))[::downscale_factor, ::downscale_factor]
-
+       
     # viz = bg.copy()
-    viz = gray2rgb(bg)
+    viz = gray2rgb(bg).copy()
+    # need copy() because of this bug http://stackoverflow.com/a/31316516
+    
     half_size = patch_size/2/downscale_factor
     if isinstance(locs[0], list):
         if colors is None:
@@ -37,7 +37,7 @@ def patch_boxes_overlay_on(bg, downscale_factor, locs, patch_size, colors=None, 
             x = x / downscale_factor
             y = y / downscale_factor
             cv2.rectangle(viz, (x-half_size, y-half_size), (x+half_size, y+half_size), colors, 2)
-
+            
     return viz
 
 def scoremap_overlay(stack, structure, downscale, setting,
@@ -51,7 +51,7 @@ def scoremap_overlay(stack, structure, downscale, setting,
     if fn is None:
         assert sec is not None
         fn = metadata_cache['sections_to_filenames'][stack][sec]
-        if is_invalid(fn): return
+        if is_invalid(fn=fn): return
 
     # scoremap_d = dense_score_map_lossless[::downscale, ::downscale]
     # h, w = scoremap_d.shape
@@ -83,7 +83,14 @@ def scoremap_overlay_on(bg, stack, structure, downscale, setting, label_text=Non
         if is_invalid(fn): return
 
     if bg == 'original':
-        bg = imread(DataManager.get_image_filepath(stack=stack, section=sec, resol='lossless', version='compressed'))[::downscale, ::downscale]
+        if downscale == 32:
+            fp = DataManager.get_image_filepath(stack=stack, section=sec, resol='thumbnail', version='cropped')
+            # download_from_s3_to_ec2(fp)
+            bg = imread(fp)
+        else:
+            fp = DataManager.get_image_filepath(stack=stack, section=sec, resol='lossless', version='compressed')
+            # download_from_s3_to_ec2(fp)
+            bg = imread(fp)[::downscale, ::downscale]
 
     # t = time.time()
     ret = scoremap_overlay(stack=stack, sec=sec, fn=fn, structure=structure, downscale=downscale,

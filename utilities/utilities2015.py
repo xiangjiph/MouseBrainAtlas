@@ -23,11 +23,28 @@ from scipy.spatial.distance import cdist, pdist
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
-# from tables import open_file, Filters, Atom
+from tables import open_file, Filters, Atom
 import bloscpack as bp
 
 from ipywidgets import FloatProgress
 from IPython.display import display
+
+
+def shell_escape(s):
+    """
+    Escape a string (treat it as a single complete string) in shell commands.
+    """
+    from tempfile import mkstemp
+    fd, path = mkstemp()
+    try:
+        with os.fdopen(fd, 'w') as f:
+            f.write(s)
+        cmd = r"""cat %s | sed -e "s/'/'\\\\''/g; 1s/^/'/; \$s/\$/'/" """ % path
+        escaped_str = check_output(cmd, shell=True)
+    finally:
+        os.remove(path)
+
+    return escaped_str
 
 def plot_histograms(hists, bins, titles=None, ncols=4, xlabel='', ylabel='', suptitle='', normalize=False, cellsize=(2, 1.5), **kwargs):
     """
@@ -151,15 +168,18 @@ def load_hdf_v2(fn, key='data'):
     import pandas
     return pandas.read_hdf(fn, key)
 
-# def save_hdf(data, fn, complevel=9, key='data'):
-#     filters = Filters(complevel=complevel, complib='blosc')
-#     with open_file(fn, mode="w") as f:
-#         _ = f.create_carray('/', key, Atom.from_dtype(data.dtype), filters=filters, obj=data)
-#
-# def load_hdf(fn, key='data'):
-#     with open_file(fn, mode="r") as f:
-#         data = f.get_node('/'+key).read()
-#     return data
+def save_hdf(data, fn, complevel=9, key='data'):
+    filters = Filters(complevel=complevel, complib='blosc')
+    with open_file(fn, mode="w") as f:
+        _ = f.create_carray('/', key, Atom.from_dtype(data.dtype), filters=filters, obj=data)
+
+def load_hdf(fn, key='data'):
+    """
+    Used by loading features.
+    """
+    with open_file(fn, mode="r") as f:
+        data = f.get_node('/'+key).read()
+    return data
 
 
 def unique_rows(a, return_index=True):
@@ -628,6 +648,11 @@ def alpha_blending(src_rgb, dst_rgb, src_alpha, dst_alpha):
 
 
 def bbox_2d(img):
+    """
+    Returns:
+        (xmin, xmax, ymin, ymax)
+    """
+
     if np.count_nonzero(img) == 0:
         raise Exception('bbox2d: Image is empty.')
     rows = np.any(img, axis=1)
