@@ -9,4 +9,6 @@ dataset_id,network_model,stain,margins,num_sample_per_class,stacks,cell_features
 96,,nissl,500,1000,MD589,largeSizeHist/largeLargeLinkLenHist
 97,,nissl,500,1000,MD594,largeSizeHist/largeLargeLinkLenHist
 98,,nissl,500,1000,MD594,largeOrientationHist/largeSizeHist/largeLargeLinkLenHist/largeSmallLinkLenHist
-99,,nissl,500,1000,MD589,largeOrientationHist/largeSizeHist/largeLargeLinkLenHist/largeSmallLinkLenHist
+99,,nissl,500,1000,MD589,largeOrientationHist/largeSizeHist/largeLargeLinkLenHist/largeSmallLinkLenHists
+100,,nissl,500,1000,MD589,allSizeHist/largeSizeHist/largeLargeLinkLenHist
+101,,nissl,500,1000,MD589,allSizeHist/huMomentsHist
