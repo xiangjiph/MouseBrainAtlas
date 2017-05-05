@@ -238,13 +238,13 @@ class DataManager(object):
         return Ts_inv_downsampled
 
     @staticmethod
-    def get_thumbnail_mask_filename_v3(stack, section=None, version='aligned_cropped'):
-        fp = DataManager.get_mask_filepath(stack=stack, sec=section, version=version)
+    def get_thumbnail_mask_filename_v3(stack, section=None, fn=None, version='aligned_cropped'):
+        fp = DataManager.get_mask_filepath(stack=stack, sec=section, fn=fn, version=version)
         return fp
 
     @staticmethod
-    def load_thumbnail_mask_v3(stack, section=None, version='aligned_cropped'):
-        fn = DataManager.get_thumbnail_mask_filename_v3(stack=stack, section=section, version=version)
+    def load_thumbnail_mask_v3(stack, section=None, fn=None, version='aligned_cropped'):
+        fn = DataManager.get_thumbnail_mask_filename_v3(stack=stack, section=section, fn=fn, version=version)
         mask = DataManager.load_data(fn, filetype='image').astype(np.bool)
         return mask
     
@@ -1481,10 +1481,13 @@ class DataManager(object):
 
         if anchor_fn is None:
             anchor_fn = metadata_cache['anchor_fn'][stack]
-
+            
         feature_fn = os.path.join(PATCH_FEATURES_ROOTDIR, model_name, stack, \
-        '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped/%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_features.hdf' % \
+        '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped/%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_features.bp' % \
         dict(fn=fn, anchor_fn=anchor_fn))
+        #feature_fn = os.path.join(PATCH_FEATURES_ROOTDIR, model_name, stack, \
+        #'%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped/%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_features.hdf' % \
+        #dict(fn=fn, anchor_fn=anchor_fn))
         # feature_fn = PATCH_FEATURES_ROOTDIR + '/%(stack)s/%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped/%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_features.hdf' % dict(stack=stack, fn=fn, anchor_fn=anchor_fn)
         return feature_fn
 
