@@ -15,6 +15,7 @@ from data_manager import *
 def patch_boxes_overlay_on(bg, downscale_factor, locs, patch_size, colors=None, stack=None, sec=None):
     """
     Assume bg has the specified downscale_factor.
+    locs: location of the patch on the original image. [x, y]
     """
 
     if bg == 'original':

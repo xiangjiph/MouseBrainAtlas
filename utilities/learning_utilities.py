@@ -82,7 +82,8 @@ def compute_predictions(H, abstain_label=-1):
 
 def compute_confusion_matrix(probs, labels, soft=False, normalize=True, abstain_label=-1):
     """
-    probs: n_example x n_class
+    Functions: rearrange labels and predicting result. Do the statistics: [[tPt, tPf], [fPt, fPf]]. 
+    Input format: probs: n_example x n_class. 
     """
 
     n_labels = len(np.unique(labels))
@@ -92,7 +93,7 @@ def compute_confusion_matrix(probs, labels, soft=False, normalize=True, abstain_
     if pred_is_hard:
         soft = False
 
-    M = np.zeros((n_labels, n_labels))
+    M = np.zeros((n_labels, n_labels)) 
     for probs0, tl in zip(probs, labels):
         if soft:
             M[tl] += probs0
