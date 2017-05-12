@@ -106,8 +106,12 @@ elif hostname == 'yuncong-Precision-WorkStation-T7500':
 elif hostname.startswith('ip'):
     print 'Setting environment for AWS compute node'
     HOST_ID = 'ec2'
-    ROOT_DIR = '/shared'
-    # ROOT_DIR = os.environ['ROOT_DIR']
+    
+    if 'ROOT_DIR' in os.environ:
+        ROOT_DIR = os.environ['ROOT_DIR']
+    else:
+        ROOT_DIR = '/shared'
+    
     ON_AWS = True
     S3_DATA_BUCKET = 'mousebrainatlas-data'
     S3_RAWDATA_BUCKET = 'mousebrainatlas-rawdata'
@@ -130,8 +134,14 @@ elif hostname.startswith('ip'):
     # HESSIAN_ROOTDIR = '/shared/CSHL_hessians/'
     ELASTIX_BIN = 'elastix'
     KDU_EXPAND_BIN = '/home/ubuntu/KDU79_Demo_Apps_for_Linux-x86-64_170108/kdu_expand'
+    CELLPROFILER_EXEC = 'python /shared/CellProfiler/CellProfiler.py' # /usr/local/bin/cellprofiler
+    CELLPROFILER_PIPELINE_FP = '/shared/CSHL_cells_v2/SegmentCells.cppipe'
+    
+    if 'CELLS_ROOTDIR' in os.environ:
+        CELLS_ROOTDIR = os.environ['CELLS_ROOTDIR']
+    else:
+        CELLS_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_cells_v2')
 
-    CELLS_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_cells_v2')
     DETECTED_CELLS_ROOTDIR = os.path.join(CELLS_ROOTDIR, 'detected_cells')
     CELL_EMBEDDING_ROOTDIR = os.path.join(CELLS_ROOTDIR, 'embedding')
     D3JS_ROOTDIR = os.path.join(CELLS_ROOTDIR, 'd3js')
