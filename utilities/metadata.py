@@ -81,21 +81,21 @@ elif hostname == 'yuncong-Precision-WorkStation-T7500':
     print 'Setting environment for Precision WorkStation'
     HOST_ID = 'workstation'
     ROOT_DIR = '/home/yuncong/'
+    DATA_ROOTDIR = '/media/yuncong/BstemAtlasData'
     
     ON_AWS = False
     S3_DATA_BUCKET = 'mousebrainatlas-data'
     S3_RAWDATA_BUCKET = 'mousebrainatlas-rawdata'
     REPO_DIR = os.environ['REPO_DIR']
     
-
-    DATA_DIR = '/media/yuncong/BstemAtlasData/CSHL_data_processed/'
+    DATA_DIR = os.path.join(DATA_ROOTDIR, 'CSHL_data_processed')
     THUMBNAIL_DATA_DIR = DATA_DIR
-    VOLUME_ROOTDIR = '/home/yuncong/CSHL_volumes/'
-    annotation_rootdir = '/home/yuncong/CSHL_data_labelings_losslessAlignCropped/'
-    annotation_midbrainIncluded_v2_rootdir = '/home/yuncong/CSHL_labelings_v3/'
-    PATCH_FEATURES_ROOTDIR = '/media/yuncong/BstemAtlasData/CSHL_patch_features'
-    ANNOTATION_ROOTDIR = '/home/yuncong/CSHL_labelings_v3/'
-    CLF_ROOTDIR = '/home/yuncong/CSHL_classifiers'
+    VOLUME_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_volumes')
+    annotation_rootdir =  os.path.join(ROOT_DIR, 'CSHL_data_labelings_losslessAlignCropped')
+#     annotation_midbrainIncluded_v2_rootdir = '/home/yuncong/CSHL_labelings_v3/'
+    PATCH_FEATURES_ROOTDIR = os.path.join(DATA_ROOTDIR, 'CSHL_patch_features')
+    ANNOTATION_ROOTDIR =  os.path.join(ROOT_DIR, 'CSHL_labelings_v3')
+    CLF_ROOTDIR =  os.path.join(ROOT_DIR, 'CSHL_classifiers')
     
 
     CLASSIFIER_SETTINGS_CSV = os.path.join(REPO_DIR, 'learning', 'classifier_settings.csv')
@@ -112,6 +112,8 @@ elif hostname.startswith('ip'):
     else:
         ROOT_DIR = '/shared'
     
+    DATA_ROOTDIR = '/shared'
+
     ON_AWS = True
     S3_DATA_BUCKET = 'mousebrainatlas-data'
     S3_RAWDATA_BUCKET = 'mousebrainatlas-rawdata'
@@ -123,6 +125,7 @@ elif hostname.startswith('ip'):
     VOLUME_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_volumes')
     # SCOREMAP_VIZ_ROOTDIR = '/shared/CSHL_scoremap_viz_Sat16ClassFinetuned_v2'
     ANNOTATION_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_labelings_v3')
+    ANNOTATION_VIZ_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_annotation_viz')
     # SVM_ROOTDIR = '/shared/CSHL_patch_features_Sat16ClassFinetuned_v2_classifiers/'
     # SVM_NTBLUE_ROOTDIR = '/shared/CSHL_patch_features_Sat16ClassFinetuned_v2_classifiers_neurotraceBlue/'
     PATCH_FEATURES_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_patch_features')
@@ -152,20 +155,9 @@ elif hostname.startswith('ip'):
     CLASSIFIER_SETTINGS_CSV = os.path.join(REPO_DIR, 'learning', 'classifier_settings.csv')
     DATASET_SETTINGS_CSV = os.path.join(REPO_DIR, 'learning', 'dataset_settings.csv')
     REGISTRATION_SETTINGS_CSV = os.path.join(REPO_DIR, 'registration', 'registration_settings.csv')
+    
+    MXNET_MODEL_ROOTDIR = os.path.join(ROOT_DIR, 'mxnet_models')
 
-# elif hostname.endswith('GL502VM'):
-#     print 'Setting environment for Local Machine Saienthan'
-#     ON_AWS = False
-#     os.environ["REPO_DIR"] = '/home/saienthan/MouseBrainAtlas/'
-#     RAW_DATA_DIR = '/home/saienthan/data/CSHL_data/'
-#     data_dir = '/home/saienthan/data/CSHL_data_processed/'
-#     DATA_DIR = '/home/saienthan/data/CSHL_data_processed/'
-#     thumbnail_data_dir = data_dir
-#     gordon_thumbnail_data_dir = '/oasis/projects/nsf/csd395/yuncong/CSHL_data_processed'
-#     volume_dir = '/home/saienthan/data/CSHL_volumes2/'
-#     annotation_rootdir = '/home/saienthan/data/CSHL_data_labelings_losslessAlignCropped/'
-#     ANNOTATION_ROOTDIR = '/home/saienthan/data/CSHL_data_labelings_losslessAlignCropped/'
-#     GORDON_RAW_DATA_DIR = '/oasis/projects/nsf/csd395/yuncong/CSHL_data'
 else:
     print 'Setting environment for Brainstem workstation'
 

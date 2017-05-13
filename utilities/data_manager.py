@@ -84,6 +84,16 @@ class DataManager(object):
     #     return s3_path
 
     @staticmethod
+    def get_annotation_viz_dir(stack):
+        return os.path.join(ANNOTATION_VIZ_ROOTDIR, stack)
+
+    @staticmethod
+    def get_annotation_viz_filepath(stack, sec=None, fn=None):
+        if fn is None:
+            fn = metadata_cache['sections_to_filenames'][sec]
+        return os.path.join(ANNOTATION_VIZ_ROOTDIR, stack, fn + '_annotation_viz.tif')
+    
+    @staticmethod
     def load_data(filepath, filetype):
 
         if not os.path.exists(filepath):
@@ -154,7 +164,7 @@ class DataManager(object):
     @staticmethod
     def load_anchor_filename(stack):
         fp = DataManager.get_anchor_filename_filename(stack)
-        download_from_s3(fp)
+        download_from_s3(fp, local_root=DATA_ROOTDIR)
         anchor_fn = DataManager.load_data(fp, filetype='anchor')
         return anchor_fn
 
@@ -168,7 +178,7 @@ class DataManager(object):
     @staticmethod
     def load_cropbox(stack, anchor_fn=None):
         fp = DataManager.get_cropbox_filename(stack=stack, anchor_fn=anchor_fn)
-        download_from_s3(fp)
+        download_from_s3(fp, local_root=DATA_ROOTDIR)
         cropbox = DataManager.load_data(fp, filetype='bbox')
         return cropbox
 
@@ -180,7 +190,7 @@ class DataManager(object):
     @staticmethod
     def load_sorted_filenames(stack):
         fp = DataManager.get_sorted_filenames_filename(stack)
-        download_from_s3(fp)
+        download_from_s3(fp, local_root=DATA_ROOTDIR)
         filename_to_section, section_to_filename = DataManager.load_data(fp, filetype='file_section_map')
         if 'Placeholder' in filename_to_section:
             filename_to_section.pop('Placeholder')
@@ -200,7 +210,7 @@ class DataManager(object):
         """
 
         fp = DataManager.get_transforms_filename(stack, anchor_fn=anchor_fn)
-        download_from_s3(fp)
+        download_from_s3(fp, local_root=DATA_ROOTDIR)
         Ts = DataManager.load_data(fp, filetype='pickle')
 
         Ts_inv_downsampled = {}
@@ -224,24 +234,35 @@ class DataManager(object):
         return mask
     
     @staticmethod
+    def get_thumbnail_mask_dir_v2(stack, version='aligned_cropped'):
+        anchor_fn = metadata_cache['anchor_fn'][stack]
+        if version == 'aligned_cropped':
+            mask_dir = os.path.join(THUMBNAIL_DATA_DIR, stack, stack + '_masks_alignedTo_' + anchor_fn + '_cropped')
+        elif version == 'aligned':
+            mask_dir = os.path.join(THUMBNAIL_DATA_DIR, stack, stack + '_masks_alignedTo_' + anchor_fn)
+        else:
+            raise Exception("version %s not recognized." % version)
+        return mask_dir
+    
+    @staticmethod
     def get_thumbnail_mask_filename_v2(stack, section=None, fn=None, version='aligned_cropped'):        
         anchor_fn = metadata_cache['anchor_fn'][stack]
         sections_to_filenames = metadata_cache['sections_to_filenames'][stack]
         if fn is None:
             fn = sections_to_filenames[section]
-        
+        mask_dir = DataManager.get_thumbnail_mask_dir_v2(stack=stack, version=version)
         if version == 'aligned_cropped':
-            fn = THUMBNAIL_DATA_DIR+'/%(stack)s/%(stack)s_masks_alignedTo_%(anchor_fn)s_cropped/%(fn)s_mask_alignedTo_%(anchor_fn)s_cropped.png' % \
-                dict(stack=stack, fn=fn, anchor_fn=anchor_fn)
+            fp = os.path.join(mask_dir, fn + '_mask_alignedTo_' + anchor_fn + '_cropped.png')
         elif version == 'aligned':
-            fn = THUMBNAIL_DATA_DIR+'/%(stack)s/%(stack)s_masks_alignedTo_%(anchor_fn)s/%(stack)s_%(sec)04d_mask_alignedTo_%(anchor_fn)s.png' % \
-                dict(stack=stack, fn=fn, anchor_fn=anchor_fn)
-        return fn
+            fp = os.path.join(mask_dir, fn + '_mask_alignedTo_' + anchor_fn + '.png')
+        else:
+            raise Exception("version %s not recognized." % version)
+        return fp
 
     @staticmethod
     def load_thumbnail_mask_v2(stack, section=None, fn=None, version='aligned_cropped'):
         fp = DataManager.get_thumbnail_mask_filename_v2(stack=stack, section=section, fn=fn, version=version)
-        download_from_s3(fp)
+        download_from_s3(fp, local_root=DATA_ROOTDIR)
         mask = DataManager.load_data(fp, filetype='image').astype(np.bool)
         return mask
 
