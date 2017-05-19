@@ -72,53 +72,111 @@ def volume_type_to_str(t):
     else:
         raise Exception('Volume type %s is not recognized.' % t)
 
-def generate_suffix(train_sample_scheme=None, global_transform_scheme=None, local_transform_scheme=None):
+# def generate_suffix(train_sample_scheme=None, global_transform_scheme=None, local_transform_scheme=None):
 
-    suffix = []
-    if train_sample_scheme is not None:
-        suffix.append('trainSampleScheme_%d'%train_sample_scheme)
-    if global_transform_scheme is not None:
-        suffix.append('globalTxScheme_%d'%global_transform_scheme)
-    if local_transform_scheme is not None:
-        suffix.append('localTxScheme_%d'%local_transform_scheme)
+#     suffix = []
+#     if train_sample_scheme is not None:
+#         suffix.append('trainSampleScheme_%d'%train_sample_scheme)
+#     if global_transform_scheme is not None:
+#         suffix.append('globalTxScheme_%d'%global_transform_scheme)
+#     if local_transform_scheme is not None:
+#         suffix.append('localTxScheme_%d'%local_transform_scheme)
 
-    return '_'.join(suffix)
-
-# def save_file_to_s3(local_path, s3_path):
-#     # upload to s3
-#     return
-
-# def save_to_s3(fpkw, fppos):
-#     """
-#     Decorator. Must provide both `fpkw` and `fppos` because we don't know if
-#     filepath will be supplied to the decorated function as positional argument
-#     or keyword argument.
-
-#     fpkw: argument keyword for file path in the decorated function
-#     fppos: argument position for file path in the decorated function
-
-#     Reference: http://python-3-patterns-idioms-test.readthedocs.io/en/latest/PythonDecorators.html
-#     """
-#     def wrapper(func):
-#         def wrapped_f(*args, **kwargs):
-#             if fpkw in kwargs:
-#                 fp = kwargs[fpkw]
-#             elif len(args) > fppos:
-#                 fp = args[fppos]
-#             res = func(*args, **kwargs)
-#             save_file_to_s3(fp, DataManager.map_local_filename_to_s3(fp))
-#             return res
-#         return wrapped_f
-#     return wrapper
+#     return '_'.join(suffix)
 
 
 class DataManager(object):
 
-    # @staticmethod
-    # def map_local_filename_to_s3(local_fp):
-    #     s3_path = local_fp.replace(os.path.dirname(data_dir), "s3://" + S3_DATA_BUCKET + '/' + )
-    #     return s3_path
+    ##########################
+    ###    Annotation    #####
+    ##########################
+    
+    @staticmethod
+    def get_annotated_structures(stack):
+        """
+        Return existing structures on every section in annotation.
+        """
+        contours, _ = load_annotation_v3(stack, annotation_rootdir=ANNOTATION_ROOTDIR)
+        annotated_structures = {sec: list(set(contours[contours['section']==sec]['name']))
+                                for sec in range(first_sec, last_sec+1)}
+        return annotated_structures
 
+    @staticmethod
+    def load_annotation_to_grid_indices_lookup(stack, by_human, stack_m=None, 
+                                classifier_setting_m=None, 
+                                classifier_setting_f=None, 
+                                warp_setting=None, trial_idx=None):
+    
+        grid_indices_lookup_fp = DataManager.get_annotation_to_grid_indices_lookup_filepath(**locals())
+        download_from_s3(grid_indices_lookup_fp)
+
+        if os.path.exists(grid_indices_lookup_fp):
+            raise Exception("Do not find structure to grid indices lookup file. Please generate it using `generate_annotation_to_grid_indices_lookup`")
+        else:
+            grid_indices_lookup = read_hdf(grid_indices_lookup_fp, 'grid_indices')
+            return grid_indices_lookup
+    
+    @staticmethod
+    def get_annotation_to_grid_indices_lookup_filepath(stack, by_human, stack_m=None, 
+                                classifier_setting_m=None, 
+                                classifier_setting_f=None, 
+                                warp_setting=None, trial_idx=None):
+        if by_human:
+            fp = os.path.join(ANNOTATION_ROOTDIR, stack, '%(stack)s_annotation_v3_grid_indices_lookup.hdf' % {'stack':stack})
+        else:
+            basename = DataManager.get_warped_volume_basename(stack_m=stack_m, stack_f=stack, 
+                                                              classifier_setting_m=classifier_setting_m,
+                                                              classifier_setting_f=classifier_setting_f,
+                                                              warp_setting=warp_setting, trial_idx=trial_idx)
+            fp = os.path.join(ANNOTATION_ROOTDIR, stack, 'annotation_%(basename)s_grid_indices_lookup.hdf' % {'basename': basename})
+        return fp
+    
+    @staticmethod
+    def get_annotation_filepath(stack, by_human, stack_m=None, 
+                                classifier_setting_m=None, 
+                                classifier_setting_f=None, 
+                                warp_setting=None, trial_idx=None):
+        if by_human:
+            fp = os.path.join(ANNOTATION_ROOTDIR, stack, '%(stack)s_annotation_v3.h5' % {'stack':stack})
+        else:
+            basename = DataManager.get_warped_volume_basename(stack_m=stack_m, stack_f=stack, 
+                                                              classifier_setting_m=classifier_setting_m,
+                                                              classifier_setting_f=classifier_setting_f,
+                                                              warp_setting=warp_setting, trial_idx=trial_idx)
+            fp = os.path.join(ANNOTATION_ROOTDIR, stack, 'annotation_%(basename)s.hdf' % {'basename': basename})
+        return fp
+       
+    @staticmethod
+    def load_annotation_v3(stack=None, by_human=True, stack_m=None, 
+                                classifier_setting_m=None, 
+                                classifier_setting_f=None, 
+                                warp_setting=None, trial_idx=None):
+        if by_human:
+            fp = DataManager.get_annotation_filepath(stack, by_human=True)
+            download_from_s3(fp)
+            contour_df = DataManager.load_data(fp, filetype='annotation_hdf')
+
+            try:
+                structure_df = read_hdf(fp, 'structures')
+            except Exception as e:
+                print e
+                sys.stderr.write('Annotation has no structures.\n')
+                return contour_df, None
+
+            sys.stderr.write('Loaded annotation %s.\n' % fp)
+            return contour_df, structure_df
+        else:
+            fp = DataManager.get_annotation_filepath(stack, by_human=False, 
+                                                     stack_m=stack_m, 
+                                                      classifier_setting_m=classifier_setting_m,
+                                                      classifier_setting_f=classifier_setting_f,
+                                                      warp_setting=warp_setting, trial_idx=trial_idx)
+            download_from_s3(fp)
+            contour_df = load_hdf_v2(fp)
+            return contour_df, None
+        
+    
+    
     @staticmethod
     def get_annotation_viz_dir(stack):
         return os.path.join(ANNOTATION_VIZ_ROOTDIR, stack)
@@ -134,10 +192,6 @@ class DataManager(object):
 
         if not os.path.exists(filepath):
             sys.stderr.write('File does not exist: %s\n' % filepath)
-
-            # If on aws, download from S3 and make available locally.
-            # if ON_AWS:
-                # DataManager.download_from_s3(filepath, DataManager.map_local_filename_to_s3(filepath))
 
         if filetype == 'bp':
             return bp.unpack_ndarray_file(filepath)
@@ -189,12 +243,6 @@ class DataManager(object):
         else:
             sys.stderr.write('File type %s not recognized.\n' % filetype)
 
-    # @staticmethod
-    # def load_volume_bbox(stack):
-    #     with open(os.path.join(volume_dir, stack, stack+'_down32_annotationVolume_bbox.txt'), 'r') as f:
-    #         bbox = map(int, f.readline().strip().split())
-    #     return bbox
-
     @staticmethod
     def get_anchor_filename_filename(stack):
         fn = THUMBNAIL_DATA_DIR + '/%(stack)s/%(stack)s_anchor.txt' % dict(stack=stack)
@@ -228,6 +276,13 @@ class DataManager(object):
 
     @staticmethod
     def load_sorted_filenames(stack):
+        """
+        Get the mapping between section index and image filename.
+        
+        Returns:
+            Two dicts: filename_to_section, section_to_filename
+        """
+        
         fp = DataManager.get_sorted_filenames_filename(stack)
         download_from_s3(fp, local_root=DATA_ROOTDIR)
         filename_to_section, section_to_filename = DataManager.load_data(fp, filetype='file_section_map')
@@ -243,78 +298,36 @@ class DataManager(object):
         return fn
 
     @staticmethod
-    def load_transforms(stack, anchor_fn=None, downsample_factor=1):
+    def load_transforms(stack, downsample_factor, use_inverse, anchor_fn=None):
         """
-        Load the transforms that when multiplied to a point on original space converts it to on aligned space.
+        Args:
+            use_inverse (bool): If True, load the transforms that when multiplied to a point on original space converts it to on aligned space. In preprocessing, set to False, which means simply parse the transform files as they are.
+            
         """
 
         fp = DataManager.get_transforms_filename(stack, anchor_fn=anchor_fn)
-        download_from_s3(fp, local_root=DATA_ROOTDIR)
+        download_from_s3(fp)
         Ts = DataManager.load_data(fp, filetype='pickle')
 
-        Ts_inv_downsampled = {}
-        for fn, T0 in Ts.iteritems():
-            T = T0.copy()
-            T[:2, 2] = T[:2, 2] * 32 / downsample_factor
-            Tinv = np.linalg.inv(T)
-            Ts_inv_downsampled[fn] = Tinv
-
-        return Ts_inv_downsampled
-
-    @staticmethod
-    def get_thumbnail_mask_filename_v3(stack, section=None, fn=None, version='aligned_cropped'):
-        fp = DataManager.get_mask_filepath(stack=stack, sec=section, fn=fn, version=version)
-        return fp
-
-    @staticmethod
-    def load_thumbnail_mask_v3(stack, section=None, fn=None, version='aligned_cropped'):
-        fp = DataManager.get_thumbnail_mask_filename_v3(stack=stack, section=section, fn=fn, version=version)
-        download_from_s3(fp)
-        mask = DataManager.load_data(fp, filetype='image').astype(np.bool)
-        return mask
+        if use_inverse:        
+            Ts_inv_downsampled = {}
+            for fn, T0 in Ts.iteritems():
+                T = T0.copy()
+                T[:2, 2] = T[:2, 2] * 32 / downsample_factor
+                Tinv = np.linalg.inv(T)
+                Ts_inv_downsampled[fn] = Tinv
+            return Ts_inv_downsampled
+        else:
+            Ts_downsampled = {}
+            for fn, T0 in Ts.iteritems():
+                T = T0.copy()
+                T[:2, 2] = T[:2, 2] * 32 / downsample_factor
+                Ts_downsampled[fn] = T
+            return Ts_downsampled
     
-    @staticmethod
-    def get_thumbnail_mask_dir_v2(stack, version='aligned_cropped'):
-        anchor_fn = metadata_cache['anchor_fn'][stack]
-        if version == 'aligned_cropped':
-            mask_dir = os.path.join(THUMBNAIL_DATA_DIR, stack, stack + '_masks_alignedTo_' + anchor_fn + '_cropped')
-        elif version == 'aligned':
-            mask_dir = os.path.join(THUMBNAIL_DATA_DIR, stack, stack + '_masks_alignedTo_' + anchor_fn)
-        else:
-            raise Exception("version %s not recognized." % version)
-        return mask_dir
-    
-    @staticmethod
-    def get_thumbnail_mask_filename_v2(stack, section=None, fn=None, version='aligned_cropped'):        
-        anchor_fn = metadata_cache['anchor_fn'][stack]
-        sections_to_filenames = metadata_cache['sections_to_filenames'][stack]
-        if fn is None:
-            fn = sections_to_filenames[section]
-        mask_dir = DataManager.get_thumbnail_mask_dir_v2(stack=stack, version=version)
-        if version == 'aligned_cropped':
-            fp = os.path.join(mask_dir, fn + '_mask_alignedTo_' + anchor_fn + '_cropped.png')
-        elif version == 'aligned':
-            fp = os.path.join(mask_dir, fn + '_mask_alignedTo_' + anchor_fn + '.png')
-        else:
-            raise Exception("version %s not recognized." % version)
-        return fp
-
-    @staticmethod
-    def load_thumbnail_mask_v2(stack, section=None, fn=None, version='aligned_cropped'):
-        fp = DataManager.get_thumbnail_mask_filename_v2(stack=stack, section=section, fn=fn, version=version)
-        download_from_s3(fp, local_root=DATA_ROOTDIR)
-        mask = DataManager.load_data(fp, filetype='image').astype(np.bool)
-        return mask
-
-    @staticmethod
-    def get_thumbnail_mask_filepath(stack, section, cerebellum_removed=False):
-        if cerebellum_removed:
-            fn = data_dir+'/%(stack)s_thumbnail_aligned_mask_cropped_cerebellumRemoved/%(stack)s_%(sec)04d_thumbnail_aligned_mask_cropped_cerebellumRemoved.png' % \
-                {'stack': stack, 'sec': section}
-        else:
-            fn = data_dir+'/%(stack)s_thumbnail_aligned_mask_cropped/%(stack)s_%(sec)04d_thumbnail_aligned_mask_cropped.png' % \
-                            {'stack': stack, 'sec': section}
-        return fn
+    #####################
+    ### Registration ####
+    #####################
 
     @staticmethod
     def get_original_volume_basename(stack, classifier_setting=None, downscale=32, volume_type='score', **kwargs):
@@ -376,7 +389,7 @@ class DataManager(object):
     def get_alignment_parameters_filepath(stack_f, stack_m, warp_setting,
     classifier_setting_m=None, classifier_setting_f=None,
     type_f='score', type_m='score', param_suffix=None,
-    downscale=32, trial_idx=0):
+    downscale=32, trial_idx=None):
         basename = DataManager.get_warped_volume_basename(**locals())
 
         if param_suffix is None:
@@ -394,7 +407,7 @@ class DataManager(object):
     type_f='score', type_m='score', param_suffix=None,
     downscale=32, trial_idx=None):
         params_fp = DataManager.get_alignment_parameters_filepath(**locals())
-        download_from_s3_to_ec2(params_fp)
+        download_from_s3(params_fp)
         return DataManager.load_data(params_fp, 'transform_params')
 
     # @save_to_s3(fpkw='fp', fppos=0)
@@ -429,7 +442,7 @@ class DataManager(object):
     def get_score_history_filepath(stack_f, stack_m, warp_setting,
     classifier_setting_m=None, classifier_setting_f=None,
     type_f='score', type_m='score', param_suffix=None,
-    downscale=32, trial_idx=0):
+    downscale=32, trial_idx=None):
         basename = DataManager.get_warped_volume_basename(**locals())
 
         if param_suffix is None:
@@ -440,18 +453,45 @@ class DataManager(object):
             return os.path.join(REGISTRATION_PARAMETERS_ROOTDIR, stack_m,
                                 basename, basename + '_scoreHistory_%(param_suffix)s.bp' % \
                                 {'param_suffix':param_suffix})
-
-    # @staticmethod
-    # def get_alignment_viz_dir(stack_m, stack_f,
-    #                             classifier_setting_m,
-    #                             classifier_setting_f,
-    #                             warp_setting,
-    #                             type_m='score', type_f='score',
-    #                             downscale=32,
-    #                             trial_idx=0):
-    #
-    #     basename = DataManager.get_warped_volume_basename(**locals())
-    #     return os.path.join(REGISTRATION_VIZ_ROOTDIR, stack_m, basename)
+    
+    ####### Best trial index file #########
+    
+    @staticmethod
+    def get_best_trial_index_filepath(stack_f, stack_m, warp_setting,        
+    classifier_setting_m=None, classifier_setting_f=None,
+    type_f='score', type_m='score', downscale=32, param_suffix=None):
+        basename = DataManager.get_warped_volume_basename(**locals())
+        if param_suffix is None:
+            fp = os.path.join(REGISTRATION_PARAMETERS_ROOTDIR, stack_m, basename + '_bestTrial', basename + '_bestTrial.txt')
+        else:
+            fp = os.path.join(REGISTRATION_PARAMETERS_ROOTDIR, stack_m, basename + '_bestTrial', basename + '_bestTrial_%(param_suffix)s.txt' % \
+                             {'param_suffix':param_suffix})
+        return fp
+        
+    @staticmethod
+    def load_best_trial_index(stack_f, stack_m, warp_setting,
+    classifier_setting_m=None, classifier_setting_f=None,
+    type_f='score', type_m='score', downscale=32, param_suffix=None):
+        fp = DataManager.get_best_trial_index_filepath(**locals())
+        download_from_s3(fp)
+        with open(fp, 'r') as f:
+            best_trial_index = int(f.readline())
+        return best_trial_index
+    
+    @staticmethod
+    def load_best_trial_index_all_structures(stack_f, stack_m, warp_setting,
+    classifier_setting_m=None, classifier_setting_f=None,
+    type_f='score', type_m='score', downscale=32):
+        input_kwargs = locals()
+        best_trials = {}
+        for structure in all_known_structures_sided:
+            try:
+                best_trials[structure] = DataManager.load_best_trial_index(param_suffix=structure, **input_kwargs)
+            except Exception as e:
+                sys.stderr.write(str(e) + '\n')
+                sys.stderr.write("Best trial file for structure %s is not found.\n" % structure)
+        return best_trials
+            
 
     @staticmethod
     def get_alignment_viz_filepath(stack_m, stack_f,
@@ -461,7 +501,7 @@ class DataManager(object):
                                 section,
                                 type_m='score', type_f='score',
                                 downscale=32,
-                                trial_idx=0):
+                                trial_idx=None):
 
         basename = DataManager.get_warped_volume_basename(**locals())
         return os.path.join(REGISTRATION_VIZ_ROOTDIR, stack_m, basename, basename + '_%04d.jpg' % section)
@@ -470,14 +510,14 @@ class DataManager(object):
     def load_confidence(stack_m, stack_f,
                             classifier_setting_m, classifier_setting_f, warp_setting, what,
                             type_m='score', type_f='score', param_suffix=None,
-                            trial_idx=0):
+                            trial_idx=None):
         return load_pickle(DataManager.get_confidence_filepath(**locals()))
 
     @staticmethod
     def get_confidence_filepath(stack_m, stack_f,
                             classifier_setting_m, classifier_setting_f, warp_setting, what,
                             type_m='score', type_f='score', param_suffix=None,
-                            trial_idx=0):
+                            trial_idx=None):
         basename = DataManager.get_warped_volume_basename(**locals())
 
         if param_suffix is None:
@@ -492,28 +532,28 @@ class DataManager(object):
         raise
 
     @staticmethod
-    def get_classifier_filepath(structure, setting):
-        clf_fp = os.path.join(CLF_ROOTDIR, 'setting_%(setting)s', 'classifiers', '%(structure)s_clf_setting_%(setting)d.dump') % {'structure': structure, 'setting':setting}
+    def get_classifier_filepath(structure, classifier_id):
+        clf_fp = os.path.join(CLF_ROOTDIR, 'setting_%(setting)s', 'classifiers', '%(structure)s_clf_setting_%(setting)d.dump') % {'structure': structure, 'setting':classifier_id}
         return clf_fp
 
     @staticmethod
-    def load_classifiers(setting, structures=all_known_structures):
+    def load_classifiers(classifier_id, structures=all_known_structures):
 
         from sklearn.externals import joblib
 
         clf_allClasses = {}
         for structure in structures:
-            clf_fp = DataManager.get_classifier_filepath(structure=structure, setting=setting)
-            download_from_s3_to_ec2(clf_fp)
+            clf_fp = DataManager.get_classifier_filepath(structure=structure, classifier_id=classifier_id)
+            download_from_s3(clf_fp)
             if os.path.exists(clf_fp):
                 clf_allClasses[structure] = joblib.load(clf_fp)
             else:
-                sys.stderr.write('Setting %d: No classifier found for %s.\n' % (setting, structure))
+                sys.stderr.write('Setting %d: No classifier found for %s.\n' % (classifier_id, structure))
 
         return clf_allClasses
 
     @staticmethod
-    def load_sparse_scores(stack, structure, setting, sec=None, fn=None, anchor_fn=None):
+    def load_sparse_scores(stack, structure, classifier_id, sec=None, fn=None, anchor_fn=None):
 
         if fn is None:
             fn = metadata_cache['sections_to_filenames'][stack][sec]
@@ -522,12 +562,12 @@ class DataManager(object):
             anchor_fn = metadata_cache['anchor_fn'][stack]
 
         sparse_scores_fn = DataManager.get_sparse_scores_filepath(stack=stack, structure=structure,
-                                            setting=setting, fn=fn, anchor_fn=anchor_fn)
-        download_from_s3_to_ec2(sparse_scores_fn)
+                                            classifier_id=classifier_id, fn=fn, anchor_fn=anchor_fn)
+        download_from_s3(sparse_scores_fn)
         return DataManager.load_data(sparse_scores_fn, filetype='bp')
 
     @staticmethod
-    def get_sparse_scores_filepath(stack, structure, setting, sec=None, fn=None, anchor_fn=None):
+    def get_sparse_scores_filepath(stack, structure, classifier_id, sec=None, fn=None, anchor_fn=None):
         if fn is None:
             fn = metadata_cache['sections_to_filenames'][stack][sec]
 
@@ -535,8 +575,8 @@ class DataManager(object):
             anchor_fn = metadata_cache['anchor_fn'][stack]
 
         return os.path.join(SPARSE_SCORES_ROOTDIR, stack, '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped', \
-                '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_%(structure)s_sparseScores_setting_%(setting)s.hdf') % \
-                {'fn': fn, 'anchor_fn': anchor_fn, 'structure':structure, 'setting': setting}
+                '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_%(structure)s_sparseScores_setting_%(classifier_id)s.hdf') % \
+                {'fn': fn, 'anchor_fn': anchor_fn, 'structure':structure, 'classifier_id': classifier_id}
 
     @staticmethod
     def load_intensity_volume(stack, downscale=32):
@@ -594,9 +634,9 @@ class DataManager(object):
         label_to_name, name_to_label = DataManager.load_data(fn, filetype='label_name_map')
         return label_to_name, name_to_label
 
-    ###################################
-    # Mesh related
-    ###################################
+    ################
+    # Mesh related #
+    ################
 
     @staticmethod
     def load_shell_mesh(stack, downscale, return_polydata_only=True):
@@ -896,7 +936,7 @@ class DataManager(object):
                                         type_f='score',
                                         downscale=32,
                                         structures=None,
-                                        trial_idx=0,
+                                        trial_idx=None,
                                         sided=True,
                                         include_surround=False):
         if stack_f is not None:
@@ -904,22 +944,6 @@ class DataManager(object):
         else:
             raise Exception('Not implemented.')
 
-    # @staticmethod
-    # def load_volume(stack_m, stack_f=None,
-    #                 warp_setting=None,
-    #                 classifier_setting_m=None,
-    #                 classifier_setting_f=None,
-    #                 type_m='score',
-    #                  type_f='score',
-    #                 structure=None,
-    #                 downscale=32,
-    #                 trial_idx=0):
-    #     if stack_f is not None:
-    #         return DataManager.load_transformed_volume(**locals())
-    #     elif type_m == 'score':
-    #         DataManager.get_original_volume_filepath
-    #     else:
-    #         raise Exception('Not implemented.')
 
     @staticmethod
     def load_transformed_volume(stack_m, stack_f,
@@ -930,23 +954,29 @@ class DataManager(object):
                                          type_f='score',
                                         structure=None,
                                         downscale=32,
-                                        trial_idx=0):
+                                        trial_idx=None):
         fp = DataManager.get_transformed_volume_filepath(**locals())
-        download_from_s3_to_ec2(fp)
+        download_from_s3(fp)
         return DataManager.load_data(fp, filetype='bp')
 
     @staticmethod
     def load_transformed_volume_all_known_structures(stack_m, stack_f,
-                                        warp_setting,
-                                        classifier_setting_m=None,
-                                        classifier_setting_f=None,
-                                        type_m='score',
-                                        type_f='score',
-                                        downscale=32,
-                                        structures=None,
-                                        trial_idx=0,
-                                        sided=True,
-                                        include_surround=False):
+                                                    warp_setting,
+                                                    classifier_setting_m=None,
+                                                    classifier_setting_f=None,
+                                                    type_m='score',
+                                                    type_f='score',
+                                                    downscale=32,
+                                                    structures=None,
+                                                    sided=True,
+                                                    include_surround=False,
+                                                     trial_idx=None,
+):
+        """
+        Args:
+            trial_idx: could be int (for global transform) or dict {sided structure name: best trial index} (for local transform).
+        """
+        
         if structures is None:
             if sided:
                 if include_surround:
@@ -955,20 +985,30 @@ class DataManager(object):
                     structures = all_known_structures_sided
             else:
                 structures = all_known_structures
-
+        
         volumes = {}
         for structure in structures:
             try:
-                volumes[structure] = DataManager.load_transformed_volume(stack_m=stack_m, type_m=type_m,
-                                                    stack_f=stack_f, type_f=type_f, downscale=downscale,
-                                                    classifier_setting_m=classifier_setting_m,
-                                                    classifier_setting_f=classifier_setting_f,
-                                                    warp_setting=warp_setting,
-                                                    structure=structure,
-                                                    trial_idx=trial_idx)
+                if trial_idx is None or isinstance(trial_idx, int):
+                    volumes[structure] = DataManager.load_transformed_volume(stack_m=stack_m, type_m=type_m,
+                                                        stack_f=stack_f, type_f=type_f, downscale=downscale,
+                                                        classifier_setting_m=classifier_setting_m,
+                                                        classifier_setting_f=classifier_setting_f,
+                                                        warp_setting=warp_setting,
+                                                        structure=structure,
+                                                        trial_idx=trial_idx)
+                else:
+                    volumes[structure] = DataManager.load_transformed_volume(stack_m=stack_m, type_m=type_m,
+                                                        stack_f=stack_f, type_f=type_f, downscale=downscale,
+                                                        classifier_setting_m=classifier_setting_m,
+                                                        classifier_setting_f=classifier_setting_f,
+                                                        warp_setting=warp_setting,
+                                                        structure=structure,
+                                                        trial_idx=trial_idx[convert_to_nonsurround_label(structure)])
             except Exception as e:
                 sys.stderr.write('%s\n' % e)
                 sys.stderr.write('Score volume for %s does not exist.\n' % structure)
+                
         return volumes
 
     @staticmethod
@@ -980,15 +1020,17 @@ class DataManager(object):
                                          type_m='score',
                                           type_f='score',
                                         structure=None,
-                                        trial_idx=0):
+                                        trial_idx=None):
 
         basename = DataManager.get_warped_volume_basename(**locals())
-
         if structure is not None:
             fn = basename + '_%s' % structure
-
         return os.path.join(VOLUME_ROOTDIR, stack_m, basename, 'score_volumes', fn + '.bp')
 
+    
+    ##########################
+    ## Probabilistic Shape  ##
+    ##########################
 
     @staticmethod
     def load_prob_shapes(stack_m, stack_f=None,
@@ -1096,7 +1138,7 @@ class DataManager(object):
                                          type_m='score',
                                           type_f='score',
                                         structure=None,
-                                        trial_idx=0):
+                                        trial_idx=None):
 
         basename = DataManager.get_warped_volume_basename(**locals())
 
@@ -1228,18 +1270,9 @@ class DataManager(object):
     @staticmethod
     def load_original_volume(stack, structure, downscale, classifier_setting=None, volume_type='score'):
         vol_fp = DataManager.get_original_volume_filepath(**locals())
-        download_from_s3_to_ec2(vol_fp, is_dir=False)
+        download_from_s3(vol_fp, is_dir=False)
         volume = DataManager.load_data(vol_fp, filetype='bp')
         return volume
-
-#     @staticmethod
-#     def load_score_volume(stack, structure, downscale, classifier_setting=None, volume_type='score'):
-#         # vol_fn = DataManager.get_score_volume_filepath(**locals())
-#         vol_fn = DataManager.get_volume_filepath(stack_m=stack, structure=structure, downscale=downscale, classifier_setting_m=classifier_setting, type_m=volume_type, trial_idx=None)
-
-#         download_from_s3_to_ec2(vol_fn, is_dir=False)
-#         score_volume = DataManager.load_data(vol_fn, filetype='bp')
-#         return score_volume
 
     @staticmethod
     def load_original_volume_bbox(stack, vol_type, classifier_setting=None, structure=None, downscale=32):
@@ -1253,7 +1286,7 @@ class DataManager(object):
                 shell: with respect to aligned uncropped thumbnail
         """
         bbox_fp = DataManager.get_original_volume_bbox_filepath(**locals())
-        download_from_s3_to_ec2(bbox_fp)
+        download_from_s3(bbox_fp)
         volume_bbox = DataManager.load_data(bbox_fp, filetype='bbox')
         return volume_bbox
 
@@ -1292,43 +1325,13 @@ class DataManager(object):
         score_volume_bbox_filepath = os.path.join(VOLUME_ROOTDIR,  stack, basename, 'score_volumes', \
                                     basename + '_%(structure)s_bbox.txt' % dict(structure=structure))
         return score_volume_bbox_filepath
-
-    # @staticmethod
-    # def get_scoremap_viz_filepath(stack, section=None, fn=None, anchor_fn=None, structure=None, setting=None):
-    #
-    #     if section is not None:
-    #         fn = metadata_cache['sections_to_filenames'][stack][section]
-    #         if is_invalid(fn): raise Exception('Section is invalid: %s.' % fn)
-    #
-    #     if anchor_fn is None:
-    #         anchor_fn = metadata_cache['anchor_fn'][stack]
-    #
-    #     scoremap_viz_filepath = os.path.join(SCOREMAP_VIZ_ROOTDIR, '%(structure)s/%(stack)s/%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_%(structure)s_denseScoreMap_viz_setting_%(setting)d.jpg') \
-    #         % {'stack': stack, 'fn': fn, 'structure': structure, 'anchor_fn': anchor_fn, 'setting': setting}
-    #
-    #     return scoremap_viz_filepath
-
-    # @staticmethod
-    # def get_downscaled_scoremap_viz_filepath(stack, section=None, fn=None, anchor_fn=None, structure=None, setting=None,
-    # downscale=32):
-    #
-    #     if section is not None:
-    #         fn = metadata_cache['sections_to_filenames'][stack][section]
-    #         if is_invalid(fn): raise Exception('Section is invalid: %s.' % fn)
-    #
-    #     if anchor_fn is None:
-    #         anchor_fn = metadata_cache['anchor_fn'][stack]
-    #
-    #     viz_dir = os.path.join(ROOT_DIR, 'CSHL_scoremaps_down%(down)d_viz' % dict(down=downscale))
-    #     basename = '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_%(down)d' % dict(fn=fn, anchor_fn=anchor_fn, down=downscale)
-    #     fn = basename + '_%(structure)s_denseScoreMap_setting_%(setting)d.jpg' % dict(structure=structure, setting=setting)
-    #
-    #     scoremap_viz_filepath = os.path.join(viz_dir, structure, stack, fn)
-    #
-    #     return scoremap_viz_filepath
+    
+    #########################
+    ###     Score map     ###
+    #########################
 
     @staticmethod
-    def get_scoremap_viz_filepath(stack, downscale, section=None, fn=None, anchor_fn=None, structure=None, setting=None):
+    def get_scoremap_viz_filepath(stack, downscale, section=None, fn=None, anchor_fn=None, structure=None, classifier_id=None):
 
         if section is not None:
             fn = metadata_cache['sections_to_filenames'][stack][section]
@@ -1338,15 +1341,15 @@ class DataManager(object):
             anchor_fn = metadata_cache['anchor_fn'][stack]
 
         viz_dir = os.path.join(ROOT_DIR, 'CSHL_scoremaps_down%(down)d_viz' % dict(down=downscale))
-        basename = '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_%(down)d' % dict(fn=fn, anchor_fn=anchor_fn, down=downscale)
-        fn = basename + '_%(structure)s_denseScoreMap_setting_%(setting)d.jpg' % dict(structure=structure, setting=setting)
+        basename = '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_down%(down)d' % dict(fn=fn, anchor_fn=anchor_fn, down=downscale)
+        fn = basename + '_%(structure)s_denseScoreMap_setting_%(classifier_id)d.jpg' % dict(structure=structure, classifier_id=classifier_id)
 
         scoremap_viz_filepath = os.path.join(viz_dir, structure, stack, fn)
 
         return scoremap_viz_filepath
 
     @staticmethod
-    def get_downscaled_scoremap_filepath(stack, structure, setting, downscale, section=None, fn=None, anchor_fn=None, return_bbox_fp=False):
+    def get_downscaled_scoremap_filepath(stack, structure, classifier_id, downscale, section=None, fn=None, anchor_fn=None, return_bbox_fp=False):
 
         if section is not None:
             fn = metadata_cache['sections_to_filenames'][stack][section]
@@ -1359,22 +1362,22 @@ class DataManager(object):
         basename = '%(fn)s_alignedTo_%(anchor_fn)s_cropped_down%(down)d' % dict(fn=fn, anchor_fn=anchor_fn, down=downscale)
 
         scoremap_bp_filepath = os.path.join(ROOT_DIR, 'CSHL_scoremaps_down%(down)d' % dict(down=downscale), stack, basename,
-        basename + '_%(structure)s_denseScoreMap_setting_%(setting)d.bp' % dict(structure=structure, setting=setting))
+        basename + '_%(structure)s_denseScoreMap_setting_%(classifier_id)d.bp' % dict(structure=structure, classifier_id=classifier_id))
 
         return scoremap_bp_filepath
 
     @staticmethod
-    def load_downscaled_scoremap(stack, structure, setting, section=None, fn=None, anchor_fn=None, downscale=32):
+    def load_downscaled_scoremap(stack, structure, classifier_id, section=None, fn=None, anchor_fn=None, downscale=32):
         """
         Return scoremaps as bp files.
         """
 
         # Load scoremap
         scoremap_bp_filepath = DataManager.get_downscaled_scoremap_filepath(stack, section=section, \
-                        fn=fn, anchor_fn=anchor_fn, structure=structure, setting=setting,
+                        fn=fn, anchor_fn=anchor_fn, structure=structure, classifier_id=classifier_id,
                         downscale=downscale)
 
-        download_from_s3_to_ec2(scoremap_bp_filepath)
+        download_from_s3(scoremap_bp_filepath)
 
         if not os.path.exists(scoremap_bp_filepath):
             raise Exception('No scoremap for image %s (section %d) for label %s\n' % \
@@ -1384,7 +1387,7 @@ class DataManager(object):
         return scoremap_downscaled
 
     @staticmethod
-    def get_scoremap_filepath(stack, structure, setting, section=None, fn=None, anchor_fn=None, return_bbox_fp=False):
+    def get_scoremap_filepath(stack, structure, classifier_id, section=None, fn=None, anchor_fn=None, return_bbox_fp=False):
 
         if section is not None:
             fn = metadata_cache['sections_to_filenames'][stack][section]
@@ -1395,8 +1398,8 @@ class DataManager(object):
             anchor_fn = metadata_cache['anchor_fn'][stack]
 
         scoremap_bp_filepath = os.path.join(SCOREMAPS_ROOTDIR, stack, \
-        '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped/%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_%(structure)s_denseScoreMap_setting_%(setting)d.hdf') \
-        % dict(stack=stack, fn=fn, structure=structure, anchor_fn=anchor_fn, setting=setting)
+        '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped/%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_%(structure)s_denseScoreMap_setting_%(classifier_id)d.hdf') \
+        % dict(stack=stack, fn=fn, structure=structure, anchor_fn=anchor_fn, classifier_id=classifier_id)
 
         scoremap_bbox_filepath = os.path.join(SCOREMAPS_ROOTDIR, stack, \
         '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped/%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_%(structure)s_denseScoreMap_interpBox.txt') \
@@ -1408,14 +1411,14 @@ class DataManager(object):
             return scoremap_bp_filepath
 
     @staticmethod
-    def load_scoremap(stack, structure, setting, section=None, fn=None, anchor_fn=None, downscale=1):
+    def load_scoremap(stack, structure, classifier_id, section=None, fn=None, anchor_fn=None, downscale=1):
         """
         Return scoremaps.
         """
 
         # Load scoremap
         scoremap_bp_filepath, scoremap_bbox_filepath = DataManager.get_scoremap_filepath(stack, section=section, \
-                                    fn=fn, anchor_fn=anchor_fn, structure=structure, return_bbox_fp=True, setting=setting)
+                                    fn=fn, anchor_fn=anchor_fn, structure=structure, return_bbox_fp=True, classifier_id=classifier_id)
         if not os.path.exists(scoremap_bp_filepath):
             raise Exception('No scoremap for image %s (section %d) for label %s\n' % \
             (metadata_cache['sections_to_filenames'][stack][section], section, structure))
@@ -1440,48 +1443,15 @@ class DataManager(object):
                             xmin_downscaled : xmin_downscaled + w_downscaled] = scoremap_roi_downscaled
 
         return scoremap_downscaled
-
-
-    # @staticmethod
-    # def load_scoremap(stack, section=None, fn=None, anchor_fn=None, label=None, downscale_factor=32, train_sample_scheme=None):
-    #     """
-    #     Return scoremaps.
-    #     """
-    #
-    #     # Load scoremap
-    #
-    #     scoremap_bp_filepath, scoremap_bbox_filepath = DataManager.get_scoremap_filepath(stack, section=section, \
-    #                                                 fn=fn, anchor_fn=anchor_fn, label=label, return_bbox_fp=True, train_sample_scheme=train_sample_scheme)
-    #     if not os.path.exists(scoremap_bp_filepath):
-    #         raise Exception('No scoremap for section %d for label %s\n' % (section, label))
-    #         # return None
-    #     scoremap = DataManager.load_data(scoremap_bp_filepath, filetype='hdf')
-    #
-    #     # Load interpolation box
-    #     xmin, xmax, ymin, ymax = DataManager.load_data(scoremap_bbox_filepath, filetype='bbox')
-    #     ymin_downscaled = ymin / downscale_factor
-    #     xmin_downscaled = xmin / downscale_factor
-    #
-    #     # full_width, full_height = DataManager.get_image_dimension(stack)
-    #     # full_width, full_height = (16000, 13120)
-    #     full_width, full_height = metadata_cache['image_shape'][stack]
-    #     scoremap_downscaled = np.zeros((full_height/downscale_factor, full_width/downscale_factor), np.float32)
-    #
-    #     # To conserve memory, it is important to make a copy of the sub-scoremap and delete the original scoremap
-    #     scoremap_roi_downscaled = scoremap[::downscale_factor, ::downscale_factor].copy()
-    #     del scoremap
-    #
-    #     h_downscaled, w_downscaled = scoremap_roi_downscaled.shape
-    #
-    #     scoremap_downscaled[ymin_downscaled : ymin_downscaled + h_downscaled,
-    #                         xmin_downscaled : xmin_downscaled + w_downscaled] = scoremap_roi_downscaled
-    #
-    #     return scoremap_downscaled
+    
+    ###########################
+    ######  CNN Features ######
+    ###########################
 
     @staticmethod
     def load_dnn_feature_locations(stack, model_name, section=None, fn=None, anchor_fn=None):
         fp = DataManager.get_dnn_feature_locations_filepath(stack=stack, model_name=model_name, section=section, fn=fn, anchor_fn=anchor_fn)
-        download_from_s3_to_ec2(fp)
+        download_from_s3(fp)
         locs = np.loadtxt(fp).astype(np.int)
         indices = locs[:, 0]
         locations = locs[:, 1:]
@@ -1501,11 +1471,6 @@ class DataManager(object):
         '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped/%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_patch_locations.txt' % \
         dict(fn=fn, anchor_fn=anchor_fn))
 
-        # output_dir = create_if_not_exists(os.path.join(PATCH_FEATURES_ROOTDIR, stack,
-        #                                '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped' % dict(fn=fn, anchor_fn=anchor_fn)))
-        # output_indices_fn = os.path.join(output_dir,
-        #                                  '%(fn)s_lossless_alignedTo_%(anchor_fn)s_cropped_patch_locations.txt' % \
-        #                                  dict(fn=fn, anchor_fn=anchor_fn))
         return feature_locs_fn
 
     @staticmethod
@@ -1545,61 +1510,95 @@ class DataManager(object):
             
         return bp.unpack_ndarray_file(features_fp)
         
+    ##################
+    ##### Image ######
+    ##################
+        
     @staticmethod
-    def get_image_dir(stack, version='compressed', resol='lossless', anchor_fn=None, modality=None, data_dir=DATA_DIR):
+    def get_image_dir(stack, version, resol='lossless', anchor_fn=None, modality=None, 
+                      data_dir=DATA_DIR, raw_data_dir=RAW_DATA_DIR, thumbnail_data_dir=THUMBNAIL_DATA_DIR):
         """
-        resol: can be either lossless or thumbnail.
-        version:
+        Args:
+            data_dir: This by default is DATA_DIR, but one can change this ad-hoc when calling the function
+            resol: can be either lossless or thumbnail
+            version: TODO - Write a list of options
+            modality: can be either nissl or fluorescent. If not specified, it is inferred.
+        
+        Returns:
+            Absolute path of the image directory.
         """
-
+        
         if anchor_fn is None:
             anchor_fn = DataManager.load_anchor_filename(stack)
 
-        if resol == 'lossless' and version == 'compressed':
+        if resol == 'lossless' and version == 'original_jp2':
+            image_dir = os.path.join(raw_data_dir, stack)
+        elif resol == 'lossless' and version == 'compressed':
             image_dir = os.path.join(data_dir, stack, stack+'_'+resol+'_alignedTo_%(anchor_fn)s_cropped_compressed' % {'anchor_fn':anchor_fn})
         elif resol == 'lossless' and (version == 'cropped' or version == 'cropped_8bit'):
             if modality == 'fluorescent':
                 image_dir = os.path.join(data_dir, stack, stack+'_'+resol+'_alignedTo_%(anchor_fn)s_cropped_contrast_stretched' % {'anchor_fn':anchor_fn})
             else:
                 image_dir = os.path.join(data_dir, stack, stack+'_'+resol+'_alignedTo_%(anchor_fn)s_cropped' % {'anchor_fn':anchor_fn})
+        elif resol == 'lossless' and version == 'uncropped_tif':
+            image_dir = os.path.join(data_dir, stack, stack + '_' + resol + '_tif')
         elif resol == 'lossless' and version == 'cropped_16bit':
             image_dir = os.path.join(data_dir, stack, stack+'_'+resol+'_alignedTo_%(anchor_fn)s_cropped' % {'anchor_fn':anchor_fn})
         elif resol == 'lossless' and version == 'cropped_gray':
             image_dir = os.path.join(data_dir, stack, stack+'_'+resol+'_alignedTo_%(anchor_fn)s_cropped_gray' % {'anchor_fn':anchor_fn})
+        elif resol == 'lossless' and version == 'cropped_gray_jpeg':
+            image_dir = os.path.join(data_dir, stack, stack + '_' + resol + '_alignedTo_' + anchor_fn + '_cropped_gray_jpeg')
         elif resol == 'lossless' and version == 'cropped_gray_contrast_stretched':
             image_dir = os.path.join(data_dir, stack, stack+'_'+resol+'_alignedTo_%(anchor_fn)s_cropped_gray_contrast_stretched' % {'anchor_fn':anchor_fn})
         elif resol == 'lossless' and version == 'cropped_8bit_blueasgray':
             image_dir = os.path.join(data_dir, stack, stack+'_'+resol+'_alignedTo_%(anchor_fn)s_cropped_contrast_stretched_blueasgray' % {'anchor_fn':anchor_fn})
-        elif resol == 'thumbnail' and version == 'cropped_tif':
-            image_dir = os.path.join(THUMBNAIL_DATA_DIR, stack, stack+'_'+resol+'_alignedTo_%(anchor_fn)s_cropped' % {'anchor_fn':anchor_fn})
+        elif resol == 'thumbnail' and (version == 'cropped' or version == 'cropped_tif'):
+            image_dir = os.path.join(thumbnail_data_dir, stack, stack+'_'+resol+'_alignedTo_%(anchor_fn)s_cropped' % {'anchor_fn':anchor_fn})
         elif (resol == 'thumbnail' and version == 'aligned') or (resol == 'thumbnail' and version == 'aligned_tif'):
-            image_dir = os.path.join(THUMBNAIL_DATA_DIR, stack, stack+'_'+resol+'_alignedTo_%(anchor_fn)s' % {'anchor_fn':anchor_fn})
+            image_dir = os.path.join(thumbnail_data_dir, stack, stack+'_'+resol+'_alignedTo_%(anchor_fn)s' % {'anchor_fn':anchor_fn})
         elif resol == 'thumbnail' and version == 'original_png':
-            image_dir = os.path.join(RAW_DATA_DIR, stack)
+            image_dir = os.path.join(raw_data_dir, stack)
         else:
             sys.stderr.write('Version %s and resolution %s not recognized.\n' % (version, resol))
 
         return image_dir
 
+    @staticmethod
+    def load_image(stack, version, resol='lossless', section=None, fn=None, anchor_fn=None, modality=None, data_dir=DATA_DIR):
+        img_fp = DataManager.get_image_filepath(**locals())
+        download_from_s3(img_fp)
+        return imread(img_fp)
 
     @staticmethod
-    def get_image_filepath(stack, section=None, version='compressed', resol='lossless', data_dir=DATA_DIR, fn=None, anchor_fn=None, modality=None):
+    def get_image_filepath(stack, version, resol='lossless', 
+                           data_dir=DATA_DIR, raw_data_dir=RAW_DATA_DIR, thumbnail_data_dir=THUMBNAIL_DATA_DIR,
+                           section=None, fn=None, anchor_fn=None, modality=None):
         """
-        resol: can be either lossless or thumbnail.
-        version:
-        - compressed:
-        - cropped, cropped_8bit, cropped_16bit
+        Args:
+            data_dir: This by default is DATA_DIR, but one can change this ad-hoc when calling the function
+            resol: can be either lossless or thumbnail
+            version: TODO - Write a list of options
+            modality: can be either nissl or fluorescent. If not specified, it is inferred.
+            
+        Returns:
+            Absolute path of the image file.
         """
 
         if section is not None:
             fn = metadata_cache['sections_to_filenames'][stack][section]
-            if is_invalid(fn):
+            if is_invalid(fn=fn):
                 raise Exception('Section is invalid: %s.' % fn)
         else:
             assert fn is not None
 
         if anchor_fn is None:
             anchor_fn = DataManager.load_anchor_filename(stack)
+            
+        if modality is None:
+            if (stack in all_alt_nissl_ntb_stacks or stack in all_alt_nissl_tracing_stacks) and fn.split('-')[1][0] == 'F':
+                modality = 'fluorescent'
+            else:
+                modality = 'nissl'
 
         image_dir = DataManager.get_image_dir(stack=stack, version=version, resol=resol, modality=modality, data_dir=data_dir)
             
@@ -1617,6 +1616,8 @@ class DataManager(object):
             else:
                 image_name = '_'.join([fn, resol, 'alignedTo_%(anchor_fn)s_cropped' % {'anchor_fn':anchor_fn}])
             image_path = os.path.join(image_dir, image_name + '.tif')
+        elif resol == 'lossless' and version == 'uncropped_tif':
+            image_path = os.path.join(image_dir, fn + '_lossless.tif')
         elif resol == 'lossless' and version == 'cropped_gray_contrast_stretched':
             image_name = '_'.join([fn, resol, 'alignedTo_%(anchor_fn)s_cropped_gray_contrast_stretched' % {'anchor_fn':anchor_fn}])
             image_path = os.path.join(image_dir, image_name + '.tif')
@@ -1626,6 +1627,8 @@ class DataManager(object):
         elif resol == 'lossless' and version == 'cropped_gray':
             image_name = '_'.join([fn, resol, 'alignedTo_%(anchor_fn)s_cropped_gray' % {'anchor_fn':anchor_fn}])
             image_path = os.path.join(image_dir, image_name + '.tif')
+        elif resol == 'lossless' and version == 'cropped_gray_jpeg':
+            image_path = os.path.join(image_dir, fn + '_' + resol + '_alignedTo_' + anchor_fn + '_cropped_gray.jpg')
         elif resol == 'thumbnail' and (version == 'cropped' or version == 'cropped_tif'):
             image_name = '_'.join([fn, resol, 'alignedTo_%(anchor_fn)s_cropped' % {'anchor_fn':anchor_fn}])
             image_path = os.path.join(image_dir, image_name + '.tif')
@@ -1636,32 +1639,8 @@ class DataManager(object):
             sys.stderr.write('Version %s and resolution %s not recognized.\n' % (version, resol))
 
         return image_path
-
-    @staticmethod
-    def get_annotated_structures(stack):
-        """
-        Return existing structures on every section in annotation.
-        """
-        contours, _ = load_annotation_v3(stack, annotation_rootdir=ANNOTATION_ROOTDIR)
-        annotated_structures = {sec: list(set(contours[contours['section']==sec]['name']))
-                                for sec in range(first_sec, last_sec+1)}
-        return annotated_structures
-
-    @staticmethod
-    def load_annotation_v3(stack=None, annotation_rootdir=ANNOTATION_ROOTDIR):
-        fn = os.path.join(annotation_rootdir, stack, '%(stack)s_annotation_v3.h5' % {'stack':stack})
-        contour_df = DataManager.load_data(fn, filetype='annotation_hdf')
-
-        try:
-            structure_df = read_hdf(fn, 'structures')
-        except Exception as e:
-            print e
-            sys.stderr.write('Annotation has no structures.\n')
-            return contour_df, None
-
-        sys.stderr.write('Loaded annotation %s.\n' % fp)
-        return contour_df, structure_df
-
+    
+    
     @staticmethod
     def get_image_dimension(stack):
         """
@@ -1672,16 +1651,17 @@ class DataManager(object):
         filename_to_section, section_to_filename = DataManager.load_sorted_filenames(stack)
         while True:
             random_fn = section_to_filename[np.random.randint(first_sec, last_sec+1, 1)[0]]
-            fn = DataManager.get_image_filepath(stack=stack, resol='lossless', version='compressed', data_dir=data_dir, fn=random_fn, anchor_fn=anchor_fn)
-            if not os.path.exists(fn):
-                fn = DataManager.get_image_filepath(stack=stack, resol='lossless', version='saturation', data_dir=data_dir, fn=random_fn, anchor_fn=anchor_fn)
-                if not os.path.exists(fn):
-                    continue
-            image_width, image_height = map(int, check_output("identify -format %%Wx%%H %s" % fn, shell=True).split('x'))
+            fn = DataManager.get_image_filepath(stack=stack, resol='lossless', version='cropped', fn=random_fn, anchor_fn=anchor_fn)
+            download_from_s3(fp)
+            if not os.path.exists(fp):
+                continue
+            image_width, image_height = map(int, check_output("identify -format %%Wx%%H %s" % fp, shell=True).split('x'))
             break
 
         return image_width, image_height
-
+    
+    #######################################################
+    
     @staticmethod
     def convert_section_to_z(stack, sec, downsample, z_begin=None, first_sec=None):
         """
@@ -1744,6 +1724,11 @@ class DataManager(object):
         init_snake_contours_fp = os.path.join(THUMBNAIL_DATA_DIR, stack, stack+'_alignedTo_'+anchor_fn+'_init_snake_contours.pkl')
         return init_snake_contours_fp
 
+    ############################
+    #####    Masks     #########
+    ############################
+    
+    
     @staticmethod
     def get_auto_submask_rootdir_filepath(stack):
         """
@@ -1836,12 +1821,9 @@ class DataManager(object):
 
         return fp
 
-    @staticmethod
-    def get_thumbnail_mask_dir_v3(stack, version='aligned'):
-        return DataManager.get_mask_dirpath(stack, version=version)
     
     @staticmethod
-    def get_mask_dirpath(stack, version='aligned'):
+    def get_thumbnail_mask_dir_v3(stack, version='aligned'):
         """
         Get directory path of thumbnail mask.
         
@@ -1858,8 +1840,9 @@ class DataManager(object):
             raise Exception('version %s is not recognized.' % version)
         return dir_path
 
+    
     @staticmethod
-    def get_mask_filepath(stack, sec=None, fn=None, version='aligned'):
+    def get_thumbnail_mask_filename_v3(stack, section=None, fn=None, version='aligned_cropped'):
         """
         Get filepath of thumbnail mask.
         
@@ -1868,9 +1851,9 @@ class DataManager(object):
         """
         
         anchor_fn = metadata_cache['anchor_fn'][stack]
-        dir_path = DataManager.get_mask_dirpath(stack, version=version)
+        dir_path = DataManager.get_thumbnail_mask_dir_v3(stack, version=version)
         if fn is None:
-            fn = metadata_cache['sections_to_filenames'][stack][sec]
+            fn = metadata_cache['sections_to_filenames'][stack][section]
 
         if version == 'aligned':
             fp = os.path.join(dir_path, fn + '_masks_alignedTo_' + anchor_fn + '_mask.png')
@@ -1879,18 +1862,22 @@ class DataManager(object):
         else:
             raise Exception('version %s is not recognized.' % version)
         return fp
-    
-    @staticmethod
-    def get_thumbnail_mask_filename_v3(stack, section=None, fn=None, version='aligned_cropped'):
-        fp = DataManager.get_mask_filepath(stack=stack, sec=section, fn=fn, version=version)
-        return fp
+
 
     @staticmethod
     def load_thumbnail_mask_v3(stack, section=None, fn=None, version='aligned_cropped'):
-        fn = DataManager.get_thumbnail_mask_filename_v3(stack=stack, section=section, fn=fn, version=version)
-        mask = DataManager.load_data(fn, filetype='image').astype(np.bool)
+        fp = DataManager.get_thumbnail_mask_filename_v3(stack=stack, section=section, fn=fn, version=version)
+        download_from_s3(fp)
+        mask = DataManager.load_data(fp, filetype='image').astype(np.bool)
         return mask
-    
+        
+    @staticmethod
+    def load_thumbnail_mask_v2(stack, section=None, fn=None, version='aligned_cropped'):
+        fp = DataManager.get_thumbnail_mask_filename_v2(stack=stack, section=section, fn=fn, version=version)
+        download_from_s3(fp, local_root=DATA_ROOTDIR)
+        mask = DataManager.load_data(fp, filetype='image').astype(np.bool)
+        return mask
+        
     @staticmethod
     def get_thumbnail_mask_dir_v2(stack, version='aligned_cropped'):
         anchor_fn = metadata_cache['anchor_fn'][stack]
@@ -1917,22 +1904,7 @@ class DataManager(object):
             raise Exception("version %s not recognized." % version)
         return fp
 
-    @staticmethod
-    def load_thumbnail_mask_v2(stack, section=None, fn=None, version='aligned_cropped'):
-        fp = DataManager.get_thumbnail_mask_filename_v2(stack=stack, section=section, fn=fn, version=version)
-        download_from_s3(fp, local_root=DATA_ROOTDIR)
-        mask = DataManager.load_data(fp, filetype='image').astype(np.bool)
-        return mask
-
-    @staticmethod
-    def get_thumbnail_mask_filepath(stack, section, cerebellum_removed=False):
-        if cerebellum_removed:
-            fn = data_dir+'/%(stack)s_thumbnail_aligned_mask_cropped_cerebellumRemoved/%(stack)s_%(sec)04d_thumbnail_aligned_mask_cropped_cerebellumRemoved.png' % \
-                {'stack': stack, 'sec': section}
-        else:
-            fn = data_dir+'/%(stack)s_thumbnail_aligned_mask_cropped/%(stack)s_%(sec)04d_thumbnail_aligned_mask_cropped.png' % \
-                            {'stack': stack, 'sec': section}
-        return fn
+    ###################################
     
     @staticmethod
     def get_region_labels_filepath(stack, sec=None, fn=None):
@@ -1965,6 +1937,8 @@ class DataManager(object):
         classifier_dir = os.path.join(classifier_id_dir, 'classifiers')
         return os.path.join(classifier_dir, '%(structure)s_clf_setting_%(setting)d.dump' % \
                      dict(structure=structure, setting=classifier_id))
+        
+    #####################################       
         
         
 ##################################################
@@ -2001,6 +1975,8 @@ def generate_metadata_cache():
      'MD603': (20928, 13472),
      'MD635': (20960, 14240),
      'MD642': (28704, 15584),
+     'MD652': (22720, 15552),
+     'MD653': (25664, 16800),
      'MD657': (27584, 16960),
      'MD658': (19936, 15744)}
     metadata_cache['anchor_fn'] = {}
@@ -2036,48 +2012,6 @@ def generate_metadata_cache():
             pass
 
 generate_metadata_cache()
-
-
-# # metadata_cache['image_shape'] = {stack: DataManager.get_image_dimension(stack) for stack in all_stacks}
-# metadata_cache['image_shape'] =\
-# {'MD585': (16384, 12000),
-#  'MD589': (15520, 11936),
-#  'MD590': (17536, 13056),
-#  'MD591': (16000, 13120),
-#  'MD592': (17440, 12384),
-#  'MD593': (17088, 12256),
-#  'MD594': (17216, 11104),
-#  'MD595': (18368, 13248),
-#  'MD598': (18400, 12608),
-#  'MD599': (18784, 12256),
-#  'MD602': (22336, 12288),
-#  'MD603': (20928, 13472),
-#  'MD635': (20960, 14240),
-#  'MD642': (28704, 15584),
-#  'MD657': (27584, 16960)}
-# metadata_cache['anchor_fn'] = {}
-# metadata_cache['sections_to_filenames'] = {}
-# metadata_cache['section_limits'] = {}
-# metadata_cache['cropbox'] = {}
-# for stack in all_stacks:
-#     try:
-#         metadata_cache['anchor_fn'][stack] = DataManager.load_anchor_filename(stack)
-#     except:
-#         pass
-#     try:
-#         metadata_cache['sections_to_filenames'][stack] = DataManager.load_sorted_filenames(stack)[1]
-#     except:
-#         pass
-#     try:
-#         metadata_cache['section_limits'][stack] = DataManager.load_cropbox(stack)[4:]
-#     except:
-#         pass
-#     try:
-#         metadata_cache['cropbox'][stack] = DataManager.load_cropbox(stack)[:4]
-#     except:
-#         pass
-
-# del stack
 
 def resolve_actual_setting(setting, stack, fn=None, sec=None):
     """Take a possibly composite setting index, and return the actual setting index according to fn."""
