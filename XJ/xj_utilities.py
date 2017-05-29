@@ -105,3 +105,83 @@ def fun_rescale_grayscale_image(inputdata,invcol=False):
     if invcol:
         rescale_image = 255 - rescale_image
     return rescale_image
+
+# Function to find the threshold by gradient alignemnt
+
+# Function to find the threshold by gradient alignemnt
+
+def fun_threshold_gradAlig(image,scanrange=(160,240),step=5,o_size_gaussfilt=1,show_score_plot=True,method='tot_dot_pdt'):
+    """
+        image: a grayscale image(0-255)
+        step: step for grayscale scan. can be integer number larger than 0
+        o_size_gaussfilt: size of the gaussian filter. 
+                          Not apply the gaussian filter to the image if equals 0
+        method: (1)tot_dot_pdt; (2)avg_cos; (3) avg_dot_pdt
+        package needed: scipy.ndimage as ndi; numpy as np; matplotlib.pyplot as plt;  
+        
+    """
+    if o_size_gaussfilt > 0:
+        tempImage = ndi.filters.gaussian_filter(image, o_gass_filt_sigma)
+    else:
+        tempImage = image
+    gradX, gradY = np.gradient(tempImage)
+    image_size = image.size
+    temp_TH_aggrement = {}
+    
+    if method == 'tot_dot_pdt':
+        grad_list = np.concatenate([gradX.flatten(),gradY.flatten()])
+        for tempTH in np.arange(scanrange[0],scanrange[1],step):
+            tempGx, tempGy = np.gradient(tempImage < tempTH)
+            temp_grad_list = np.concatenate([tempGx.flatten(), tempGy.flatten()])
+            temp_grad_aggrement_score = np.dot(temp_grad_list, grad_list)
+    #         temp_grad_aggrement_score = np.dot(tempGx.flatten(),gradX_gf.flatten()) + np.dot(tempGy.flatten(), gradY_gf.flatten())
+            temp_TH_aggrement[tempTH] = temp_grad_aggrement_score  
+    
+    if method == 'avg_dot_pdt':
+        for tempTH in np.arange(scanrange[0],scanrange[1],step):
+            tempGx, tempGy = np.gradient(tempImage < tempTH)
+            non_zero =np.logical_and(np.logical_or(tempGx != 0,tempGy != 0),np.logical_or(gradX !=0, gradY !=0 ))
+            temp_TH_aggrement[tempTH] = (tempGx[non_zero]*gradX[non_zero] + tempGy[non_zero]*gradY[non_zero]).mean()       
+        
+    if method == 'avg_cos':
+        grad_list_gf = np.transpose(np.stack([gradX.flatten(),gradY.flatten()]))
+        for tempTH in np.arange(scanrange[0],scanrange[1],step):
+            tempGx, tempGy = np.gradient(tempImage < tempTH)
+            
+            tempG_list = np.transpose(np.stack([tempGx.flatten(),tempGy.flatten()])) # gradient vector of each pixel on BW image
+            non_zero_G = np.logical_or(tempGx > 0, tempGy > 0).flatten()
+            temp_n_nonzero = np.count_nonzero(non_zero_G) # num of nonzero gradient point on BW image
+            temp_n_nonzero_count = 0 
+            if temp_n_nonzero > 0:
+                temp_total_score = 0
+                for tempIndex in non_zero_G.nonzero()[0]:
+                    temp_doc_product = grad_list_gf[tempIndex][0]*tempG_list[tempIndex][0] + grad_list_gf[tempIndex][1]*tempG_list[tempIndex][1]
+                    temp_norm_grayscale = (grad_list_gf[tempIndex][0]**2 + grad_list_gf[tempIndex][1]**2)**0.5
+                    temp_norm_BW = (tempG_list[tempIndex][0]**2 + tempG_list[tempIndex][1]**2)**0.5
+                    if temp_norm_grayscale * temp_norm_BW > 0:
+                        temp_total_score = temp_total_score + temp_doc_product/float(temp_norm_grayscale * temp_norm_BW)
+                        temp_n_nonzero_count = temp_n_nonzero_count + 1
+                    else:
+                        continue
+        #                 print(temp_norm_grayscale,temp_norm_BW)
+                if temp_n_nonzero_count > 0:
+                    temp_score = temp_total_score/float(temp_n_nonzero_count)
+        #             print(tempTH,temp_score,temp_n_nonzero_count,temp_n_nonzero)
+                else:
+                    print(tempTH)
+                    temp_score = 0
+            else:
+                temp_score = 0
+            temp_TH_aggrement[tempTH] = temp_score   
+    
+    tempKeys, tempValues = zip(*sorted(temp_TH_aggrement.items()))
+    grad_threshold = tempKeys[np.argmax(tempValues)]
+    
+    if show_score_plot==True:
+        fig_grad_THscan_score = plt.figure()
+        fig_grad_THscan_score = plt.plot(tempKeys, tempValues)
+        fig_grad_THscan_score = plt.xlabel('Grayscale threshold')
+        fig_grad_THscan_score = plt.ylabel('Score')
+        fig_grad_THscan_score = plt.title('Score method used: '+method+'\nBest threshold = %s' % grad_threshold)
+        fig_grad_THscan_score = plt.grid(True)
+    return grad_threshold
