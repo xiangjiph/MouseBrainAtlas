@@ -84,7 +84,9 @@ def fun_patch_features_DT(patch_image_BW, patch_area=50176,showImQ=False):
 
     if showImQ:
         fig_dismap = plt.figure()
-        fig_dismap = plt.imshow(distance_im, cmap=plt.cm.gray)
+        # fig_dismap = plt.imshow(distance_im, cmap=plt.cm.gray)
+        fig_dismap = plt.imshow(distance_im)
+        dis_dismap = plt.colorbar()
         fig_stat = plt.figure()
         fig_stat = plt.scatter(dis_hist_bins_mid,np.log10(distance_im_his[0]));
         fig_stat = plt.hold
@@ -135,17 +137,20 @@ def fun_threshold_gradAlig(image,scanrange=(160,240),step=5,o_size_gaussfilt=1,o
     for tempTH in np.arange(scanrange[0],scanrange[1],step):
         tempGx, tempGy = np.gradient(tempImage < tempTH)
         nz = np.logical_and(np.logical_or(tempGx != 0, tempGy != 0),np.logical_or(gradX != 0, gradY != 0))
-        
-        if method == 'tot_dot_pdt':
-            temp_TH_aggrement[tempTH] = np.sum(tempGx[nz]*gradX[nz] + tempGy[nz]*gradY[nz])
-        
-        if method == 'avg_dot_pdt':
-            temp_TH_aggrement[tempTH] = (tempGx[nz]*gradX[nz] + tempGy[nz]*gradY[nz]).mean()
-        
-        if method == 'avg_cos':
-            grad_norm = np.sqrt( gradX[nz] ** 2 + gradY[nz] ** 2 )
-            tempG_norm = np.sqrt( tempGx[nz] ** 2 + tempGy[nz] ** 2 )
-            temp_TH_aggrement[tempTH] = ((tempGx[nz]*gradX[nz] + tempGy[nz]*gradY[nz])/(tempG_norm * grad_norm)).mean()
+        if np.count_nonzero(nz) == 0:
+            temp_TH_aggrement[tempTH] = 0
+            # print('set to 0')
+        else:            
+            if method == 'tot_dot_pdt':
+                temp_TH_aggrement[tempTH] = np.sum(tempGx[nz]*gradX[nz] + tempGy[nz]*gradY[nz])
+
+            if method == 'avg_dot_pdt':
+                temp_TH_aggrement[tempTH] = (tempGx[nz]*gradX[nz] + tempGy[nz]*gradY[nz]).mean()
+
+            if method == 'avg_cos':
+                grad_norm = np.sqrt( gradX[nz] ** 2 + gradY[nz] ** 2 )
+                tempG_norm = np.sqrt( tempGx[nz] ** 2 + tempGy[nz] ** 2 )
+                temp_TH_aggrement[tempTH] = ((tempGx[nz]*gradX[nz] + tempGy[nz]*gradY[nz])/(tempG_norm * grad_norm)).mean()
     
     tempKeys, tempValues = zip(*sorted(temp_TH_aggrement.items()))
     grad_threshold = tempKeys[np.argmax(tempValues)]
