@@ -49,9 +49,10 @@ def fun_viz_classes(data_dic,patch_loc_list,nornmalized=True,transposed=True,pat
                 sys.stderr.write('Index location out of range'+str(temoLoc));
     if nornmalized:
         try:
-            patch_loc_plot = rescale_grayscale_image(patch_loc_plot)
+            patch_loc_plot = fun_rescale_grayscale_image(patch_loc_plot)
         except:
-            sys.stderr('Cannot rescale the grayscale image. Check if function rescale_grayscale_image is available.')
+            #sys.stderr('Cannot rescale the grayscale image. Check if function rescale_grayscale_image is available.')
+            print('Cannot rescale the grayscale image. Check if function rescale_grayscale_image is available.')
     if transposed:
         patch_loc_plot = np.transpose(patch_loc_plot)
     return patch_loc_plot
