@@ -110,11 +110,51 @@ def fun_rescale_grayscale_image(inputdata,invcol=False):
     return rescale_image
 
 # Function to find the threshold by gradient alignemnt
-
-# Function to find the threshold by gradient alignemnt
-
-# Function to find the threshold by gradient alignemnt
-
-# Function to find the threshold by gradient alignemnt
+def fun_threshold_gradAlig(image,scanrange=(160,240),step=5,o_size_gaussfilt=1,o_return_scores=False,show_score_plot=True,method='avg_dot_pdt'):
+    """
+        image: a grayscale image(0-255)
+        step: step for grayscale scan. can be integer number larger than 0
+        o_size_gaussfilt: size of the gaussian filter. 
+                          Not apply the gaussian filter to the image if equals 0
+        method: (1)tot_dot_pdt; (2)avg_cos
+        package needed: scipy.ndimage as ndi; numpy as np; matplotlib.pyplot as plt;  
+        
+    """
+    if o_size_gaussfilt > 0:
+        tempImage = (ndi.filters.gaussian_filter(image.astype(np.float), o_size_gaussfilt)) # ndi retuens the same type of array as image(uint array)
+    else:
+        tempImage = image.astype(np.float)
+    gradX, gradY = np.gradient(tempImage)
+    image_size = image.size
+    temp_TH_aggrement = {}
+    
+    for tempTH in np.arange(scanrange[0],scanrange[1],step):
+        tempGx, tempGy = np.gradient((tempImage > tempTH).astype(np.float))
+        nz = np.logical_or(tempGx != 0, tempGy != 0)
+        if np.count_nonzero(nz) == 0:
+            temp_TH_aggrement[tempTH] = 0
+        else:
+            if method == 'tot_dot_pdt':
+                    temp_TH_aggrement[tempTH] = np.sum(tempGx[nz]*gradX[nz] + tempGy[nz]*gradY[nz])
+            if method == 'avg_dot_pdt':
+                temp_TH_aggrement[tempTH] = np.average(tempGx[nz]*gradX[nz] + tempGy[nz]*gradY[nz])
+            if method == 'avg_cos':
+                grad_norm = np.sqrt( gradX[nz] ** 2 + gradY[nz] ** 2 )
+                tempG_norm = np.sqrt( tempGx[nz] ** 2 + tempGy[nz] ** 2 )
+                temp_TH_aggrement[tempTH] = np.average((tempGx[nz]*gradX[nz] + tempGy[nz]*gradY[nz])/(tempG_norm * grad_norm + 0.000000000000001))
+    tempKeys, tempValues = zip(*sorted(temp_TH_aggrement.items()))
+    grad_threshold = tempKeys[np.argmax(tempValues)]
+    
+    if show_score_plot==True:
+        fig_grad_THscan_score = plt.figure()
+        fig_grad_THscan_score = plt.plot(tempKeys, tempValues)
+        fig_grad_THscan_score = plt.xlabel('Grayscale threshold')
+        fig_grad_THscan_score = plt.ylabel('Score')
+        fig_grad_THscan_score = plt.title('Score method used: '+method+'\nBest threshold = %s' % grad_threshold)
+        fig_grad_THscan_score = plt.grid(True)
+    if o_return_scores==True:
+        return grad_threshold,[tempKeys,tempValues]
+    else:
+        return grad_threshold    
 
    
