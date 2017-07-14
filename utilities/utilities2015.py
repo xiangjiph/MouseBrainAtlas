@@ -20,7 +20,7 @@ try:
     import cv2
 except:
     sys.stderr.write('Cannot load cv2.\n')
-#from tables import open_file, Filters, Atom
+from tables import open_file, Filters, Atom
 import bloscpack as bp
 
 from ipywidgets import FloatProgress

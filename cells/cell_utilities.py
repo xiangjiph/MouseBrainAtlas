@@ -51,9 +51,13 @@ def normalize_angle(a):
 
 def load_data(fp):
 
-    if fp.endswith('bp'):
+    if fp.endswith('blobMaskCenters.hdf'):
+        data = bp.unpack_ndarray_file(fp)
+    elif fp.endswith('bp'):
         data = bp.unpack_ndarray_file(fp)
     elif fp.endswith('jpg'):
+        data = imread(fp)
+    elif fp.endswith('tif'):
         data = imread(fp)
     elif fp.endswith('hdf'):
         data = load_hdf_v2(fp).tolist()
@@ -105,7 +109,7 @@ def get_cell_data_filepath(what, stack, sec=None, fn=None, ext=None):
     elif what == 'minor':
         fn_template = '%(fn)s_blobMinorAxisLen.bp'
     elif what == 'mask_center':
-        fn_template = '%(fn)s_blobMaskCenters.bp'
+        fn_template = '%(fn)s_blobMaskCenters.hdf'
     elif what == 'mask':
         fn_template = '%(fn)s_blobMasks.hdf'
     elif what == 'centroid':
@@ -134,6 +138,10 @@ def get_cell_data_filepath(what, stack, sec=None, fn=None, ext=None):
         fn_template = '%(fn)s_neighbors.hdf'
     elif what == 'neighbor_vectors':
         fn_template = '%(fn)s_neighbor_vectors.hdf'
+    elif what == 'coords':
+        fn_template = '%(fn)s_blobCoords.hdf'
+    elif what == 'contours_global':
+        fn_template = '%(fn)s_blobContoursGlobal_cellprofiler.hdf'
     else:
         fn_template = '%(fn)s_' + what + '.' + ext
     # else:
@@ -148,7 +156,6 @@ def load_cell_data(what, stack, sec=None, fn=None, ext=None):
     if fp is None:
         raise 'Cannot load data for section %d.'
     download_from_s3(fp)
-
     data = load_data(fp)
     return data
 
