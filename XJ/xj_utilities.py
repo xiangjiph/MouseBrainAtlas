@@ -98,13 +98,16 @@ def fun_patch_features_DT(patch_image_BW, patch_area=50176,showImQ=False):
     return features_DT, distance_im
 
 ### Image Processing ### 
-def fun_rescale_grayscale_image(inputdata,invcol=False):
+def fun_rescale_grayscale_image(inputdata,invcol=False,pvmax=255):
     inputdata = np.array(inputdata);
     vmin = np.percentile(inputdata, 0);
     vmax = np.percentile(inputdata, 100);
     rescale_image = (inputdata - vmin ) / (vmax - vmin);
     rescale_image = np.maximum(np.minimum(rescale_image, 1), 0)
-    rescale_image = skimage.img_as_ubyte(rescale_image)
+    if pvmax == 255:
+        rescale_image = skimage.img_as_ubyte(rescale_image)
+    elif pvmax ==1:
+        pass
     if invcol:
         rescale_image = 255 - rescale_image
     return rescale_image
