@@ -160,4 +160,94 @@ def fun_threshold_gradAlig(image,scanrange=(160,240),step=5,o_size_gaussfilt=1,o
     else:
         return grad_threshold    
 
+    
+def fun_radius_bbox(min_0, min_1, max_0, max_1):
+    """
+    radisu_bbox(min_0, min_1, max_0, max_1), correspond to the order of regionprops.bbox tuple
+    """
+    radius = 0.5 * ((max_1 - min_1)**2 + (max_0 - min_0)**2) ** 0.5
+    return radius
+
+def fun_crop_images(image, min_0, min_1, max_0, max_1, margin=0,im0max=10000,im1max=10000):
+    min_0 = max(min_0-margin,0)
+    max_0 = min(max_0+margin,im0max)
+    min_1 = max(min_1-margin,0)
+    max_1 = min(max_1+margin,im1max)
+    crop_image = image[min_0:max_0, min_1:max_1].copy()
+#     print((min_0, min_1, max_0, max_1))
+    return crop_image
+
+def fun_scan_range(cloc,radius,im1max=10000,im0max=10000,o_form='1D'):
+    cloc = np.array(cloc);
+    min_0 = int(max(np.round(cloc - radius)[0],0))
+    min_1 = int(max(np.round(cloc - radius)[1],0))
+    max_0 = int(min(np.round(cloc + radius)[0],im0max))
+    max_1 = int(min(np.round(cloc + radius)[1],im1max))
+    local_cloc = (int(cloc[0] - min_0), int(cloc[1] - min_1))
+    if o_form == '1D':
+        return (min_0, min_1, max_0, max_1), local_cloc
+    elif o_form == '2D':
+        return np.array([[min_0,min_1],[min_0,max_1],[max_0,max_1],[max_0,min_1]]), local_cloc
+
+def fun_local_distance(blob_loc_tuple, local_cloc_tuple):
+    r = ((blob_loc_tuple[0] - local_cloc_tuple[0]) ** 2 + ((blob_loc_tuple[1] - local_cloc_tuple[1]) ** 2) ) ** 0.5
+    return r
+
+def fun_similarity(oriIprops,nextIprops,distance_type='euclid'):
+    similarity = [];
+    num_blob = len(nextIprops);
+    pi = 3.1415926
+    for i in range(num_blob):
+        if distance_type == 'euclid':
+            difference = abs(oriIprops - nextIprops[i])/abs(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
+        elif distance_type == 'area':
+            difference = abs(oriIprops - nextIprops[i])/(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
+        elif distance_type == 'eccentricity':
+            difference = abs(oriIprops - nextIprops[i])/(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
+        elif distance_type == 'moments_hu':
+            difference = np.abs(np.abs(oriIprops) - np.abs(np.array(nextIprops[i],dtype=np.float)))/np.abs( np.max(np.abs(np.vstack((oriIprops,nextIprops[i]))),axis=0) + 10**(-16)) 
+        
+        elif distance_type == 'equivalent_diameter':
+            difference = abs(oriIprops - nextIprops[i])/(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
+        elif distance_type == 'orientation':
+            diff_angle = abs(oriIprops - nextIprops[i])
+            diff_angle = min(diff_angle, pi - diff_angle )
+            similarity.append(np.cos(diff_angle))
+            continue
+        elif distance_type == 'angular':
+            diff_angle = abs(oriIprops - nextIprops[i])
+            diff_angle = min(diff_angle, pi - diff_angle )
+            difference = np.cos(diff_angle) 
+        similarity.append( 1 - difference) 
+    return similarity
+
+def fun_reconstruct_labeled_image(cell_global_coord,oriImL0, oriImL1, crop_range=None, op_clear_border=True,op_relabel=True):
+    """ cell_global_coord = list of coordinate of the global index position of all the pixel in each blob
+        oriImL1, oriImL0 = metadata_cache['image_shape][stack]
+        crop_range = (min0, max0, min1, max1)
+        return: labeled_image, blob_prop_List
+    """
+    cell_numbers = len(cell_global_coord);
+    tempLabeledImage = np.zeros([oriImL0,oriImL1],dtype=np.int32)
+    
+    for tempBlobIndex in range(cell_numbers):
+        tempBlobCoor = cell_global_coord[tempBlobIndex]
+        tempLabeledImage[tempBlobCoor[:,0],tempBlobCoor[:,1]] = tempBlobIndex + 1
+    if crop_range is not None:
+        crop_0_min = crop_range[0]
+        crop_0_max = crop_range[1]
+        crop_1_min = crop_range[2]
+        crop_1_max = crop_range[3]
+        tempLabeledImage = tempLabeledImage[crop_0_min:crop_0_max, crop_1_min:crop_1_max]
+    if op_clear_border:
+        tempLabeledImage = skimage.segmentation.clear_border(tempLabeledImage)
+        
+    if op_relabel:
+        im_label_ori = tempLabeledImage
+        tempLabeledImage = skimage.measure.label(tempLabeledImage > 0)
+        im_blob_prop = skimage.measure.regionprops(tempLabeledImage)
+        return tempLabeledImage, im_blob_prop, im_label_ori
+    else:
+        im_blob_prop = skimage.measure.regionprops(tempLabeledImage)
+        return tempLabeledImage, im_blob_prop
    
