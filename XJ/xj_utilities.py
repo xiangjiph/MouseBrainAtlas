@@ -6,6 +6,9 @@ from scipy.signal import argrelmax
 from scipy.stats import linregress
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib
+from shapely.geometry import Polygon as Polygon
+
 
 ### File management ###
 # save_folder_path = '/shared/MouseBrainAtlasXiang/XJ/Output/detect_cell_alternatives_output/';
@@ -250,4 +253,14 @@ def fun_reconstruct_labeled_image(cell_global_coord,oriImL0, oriImL1, crop_range
     else:
         im_blob_prop = skimage.measure.regionprops(tempLabeledImage)
         return tempLabeledImage, im_blob_prop
-   
+
+def fun_blobs_in_polygen(blob_centroid_list, contour_vertice_coor_array, crop_min_list=[0,0]):
+    contourPath = matplotlib.path.Path(contour_vertice_coor_array[:,[1,0]] - crop_min_list) # Yuncong uses (row, col) while numpy use 
+    return contourPath.contains_points(blob_centroid_list)
+
+def fun_blobs_out_polygen(blob_centroid_list, contour_vertice_coor_array, crop_min_list=[0,0], margin=0):
+    contour_polygon = Polygon(contour_vertice_coor_array[:,[1,0]] - crop_min_list)
+    contour_polygon_with_margin = contour_polygon.buffer(margin, resolution=2)
+    contour_polygon_with_margin = matplotlib.path.Path(list(contour_polygon_with_margin.exterior.coords))
+    return np.logical_not(contour_polygon_with_margin.contains_points(blob_centroid_list))
+    
