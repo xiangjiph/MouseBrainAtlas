@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
 from shapely.geometry import Polygon as Polygon
-
+from cell_utilities import *
 
 ### File management ###
 # save_folder_path = '/shared/MouseBrainAtlasXiang/XJ/Output/detect_cell_alternatives_output/';
@@ -27,8 +27,11 @@ def fun_construct_filename(define_list):
     get_finelname(list_of_definition_component): return a string concaining filename definition, seperated by '_' 
     """
     filename_head = ''
-    for filename_element in map(str,define_list):
-        filename_head = filename_head + filename_element + '_'
+    filename_element = map(str, define_list)
+    num_element = len(filename_element)
+    for idx in range(num_element-1):
+        filename_head = filename_head + filename_element[idx] + '_'
+    filename_head = filename_head + filename_element[num_element-1]
     return filename_head
 
 
@@ -263,4 +266,135 @@ def fun_blobs_out_polygen(blob_centroid_list, contour_vertice_coor_array, crop_m
     contour_polygon_with_margin = contour_polygon.buffer(margin, resolution=2)
     contour_polygon_with_margin = matplotlib.path.Path(list(contour_polygon_with_margin.exterior.coords))
     return np.logical_not(contour_polygon_with_margin.contains_points(blob_centroid_list))
+   
     
+    
+    
+    
+def fun_collect_typical_blobs(im_blob_prop,im_label, section, scan_parameters):
+    """ Output: typical_blobs: List of [section, blobID, im_blob_prop[section][blobID]];
+    matched_paris: List of [section,blobID,im_blob_prop[section][blobID],tempSec, matched_blob_ID, matched_blob_props,matched_blob_similarity_matrix]    
+    """
+    typical_blobs = []
+    matched_paris = []
+    scan_range = scan_parameters['scan_section_range']
+    scan_section = range(section - scan_range, section + scan_range + 1)
+    scan_section.remove(section)
+    im0max = scan_parameters['im0max']
+    im1max = scan_parameters['im1max']
+
+    prop = scan_parameters['prop']
+    prop_for_comparison = scan_parameters['prop_for_comparison']
+
+    compare_weight = scan_parameters['compare_weight']
+    o_simil_threshold = scan_parameters['similarity_threshold']
+
+    o_fix_scan_size = scan_parameters['o_fix_scan_size']
+    o_scan_size_coeff = scan_parameters['scan_size_coeff']
+    o_scan_size = scan_parameters['scan_size']  
+    secList_in_BlobPropDic = im_blob_prop.keys()
+    n_blobs = {}
+    blobs_idx_dic = {}
+    blobs_centroids_dic = {}
+    for tempSec in secList_in_BlobPropDic:
+        n_blobs[tempSec] = len(im_blob_prop[tempSec])
+        blobs_idx_dic[tempSec] = np.arange(0, n_blobs[tempSec], dtype=np.int32)
+        blobs_centroids_dic[tempSec] = np.array([im_blob_prop[tempSec][tempBID]['centroid'] for tempBID in blobs_idx_dic[tempSec]])
+
+
+    if set(scan_section).issubset(set(secList_in_BlobPropDic)):
+        pass
+    else:
+        print('Warrning: Scaned section(s) not included in input im_blob_prop')
+
+    for blobID in range(n_blobs[section]):
+        if (blobID % 1000 == 0):
+            print('Section %d Finished percentage: %f'%(section, (float(blobID)*100 / n_blobs[section]) ))
+
+        temp_curr_blob_props = im_blob_prop[section][blobID]
+        tempB1_idx_loc = temp_curr_blob_props['centroid']
+        if o_fix_scan_size:
+            temp_next_sec_range, local_cloc = fun_scan_range(tempB1_idx_loc,o_scan_size,im0max=im0max,im1max=im1max,o_form='2D')
+            temp_next_sec_range_1D,_ = fun_scan_range(tempB1_idx_loc,o_scan_size,im0max=im0max,im1max=im1max)
+        else:
+            temp_next_sec_range, local_cloc = fun_scan_range(tempB1_idx_loc,o_scan_size_coeff*fun_radius_bbox(*temp_curr_blob_props.bbox),im0max=im0max,im1max=im1max,o_form='2D')
+            temp_next_sec_range_1D,_ = fun_scan_range(tempB1_idx_loc,o_scan_size_coeff*fun_radius_bbox(*temp_curr_blob_props.bbox),im0max=im0max,im1max=im1max)
+
+
+        for tempSec in scan_section:
+            if tempSec not in secList_in_BlobPropDic:
+                continue
+
+            # Find blobs at the nearby location in the scaned section
+            # Method 1
+            tempPath = matplotlib.path.Path(temp_next_sec_range)
+            tempBlobInside = tempPath.contains_points(blobs_centroids_dic[tempSec])
+            tempBlobInsideIndex = blobs_idx_dic[tempSec][tempBlobInside]            
+            # Method 2
+#            temp_im = fun_crop_images(im_label[tempSec],*temp_next_sec_range_1D, margin=0,im0max=im0max, im1max=im1max)
+#            tempBlobInsideIndex = np.delete(np.unique(temp_im.flatten()),0,axis=0) - 1           
+            temp_num_blob = len(tempBlobInsideIndex)
+            if temp_num_blob:
+                temp_next_sec_blob_prop = np.array(im_blob_prop[tempSec])[tempBlobInsideIndex]
+            else:
+    #             print('No blobs found in this section')
+                continue
+
+            # Get blob properties
+            temp_next_blob_props = {}
+            for tempProp in prop:
+                temp_prop_value = []
+                for blobIndex in range(temp_num_blob):
+                    temp_prop_value.append(temp_next_sec_blob_prop[blobIndex][tempProp])
+                temp_next_blob_props[tempProp] = temp_prop_value
+            temp_next_blob_props['relative_dict'] = []
+            for blobIndex in range(temp_num_blob):
+                temp_next_blob_props['relative_dict'].append(fun_local_distance(temp_next_sec_blob_prop[blobIndex]['centroid'],local_cloc))
+
+            #### Construct similarity matrix ####
+            temp_sim = {}
+            for temp_prop in prop_for_comparison:
+                    temp_sim[temp_prop] = np.array(fun_similarity(temp_curr_blob_props[temp_prop],
+                                                             temp_next_blob_props[temp_prop],distance_type=temp_prop))
+            temp_sim_matrix = np.column_stack((temp_sim[temp_prop] for temp_prop in prop_for_comparison))
+
+            #### Blob comparison ####
+            temp_weighted_sim = np.dot(temp_sim_matrix,compare_weight)
+            temp_compare_result = temp_weighted_sim > o_simil_threshold
+            if any(temp_compare_result.tolist()):
+                typical_blobs.append([section, blobID, im_blob_prop[section][blobID]])
+                # list of [section, blobID, blob_properties, scan_section, matched_blob_IDs, matched_blobs_properties, match_blob_similarities]
+                #matched_paris.append([section,blobID,im_blob_prop[section][blobID],tempSec, tempBlobInsideIndex[temp_compare_result], im_blob_prop[tempSec][tempBlobInsideIndex[temp_compare_result]],temp_sim_matrix[temp_compare_result,:]])
+    return typical_blobs, matched_paris
+    # return typical_blobs
+
+def fun_load_data_collect_typical_blobs(sec, scan_parameters):
+    scan_section_range = scan_parameters['scan_section_range']
+    sec_load_data_list = range(sec - scan_section_range, sec + scan_section_range + 1)
+    scan_section = list(sec_load_data_list)
+    scan_section.remove(sec)
+    secList = scan_parameters['secList']
+    stack = scan_parameters['stack']
+
+    cell_centroids = {}
+    cell_numbers = {}
+    cell_global_coord = {}
+    im_blob_prop = {}
+    im_label_ori = {}
+    im_label = {}
+    im_BW = {}
+    for tempSec in sec_load_data_list:
+        if tempSec in secList:
+            cell_global_coord[tempSec] = load_cell_data('coords', stack=stack, sec=tempSec)
+            temp_im_label, temp_im_blob_prop, _ = fun_reconstruct_labeled_image(cell_global_coord[tempSec],crop_range= scan_parameters['crop_range_mxmx'], 
+                                                                        oriImL0=scan_parameters['oriImL0'],oriImL1=scan_parameters['oriImL1'])
+            im_label[tempSec] = temp_im_label
+            im_BW[tempSec] = temp_im_label > 0
+            im_blob_prop[tempSec] = np.array(temp_im_blob_prop)
+        else:
+            sys.stderr.write('Warning: missing section %d'%tempSec)
+            scan_section.remove(tempSec)
+    n_blobs = {tempSec: len(im_blob_prop[tempSec]) for tempSec in im_blob_prop.keys()}
+    print('Scanning section %d'%sec)
+    typical_blobs, matched_pairs = fun_collect_typical_blobs(im_blob_prop=im_blob_prop, im_label=im_label, section=sec,scan_parameters=scan_parameters)
+    return typical_blobs, matched_pairs

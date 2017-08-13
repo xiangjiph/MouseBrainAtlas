@@ -150,6 +150,69 @@ def get_cell_data_filepath(what, stack, sec=None, fn=None, ext=None):
     fp = os.path.join(DETECTED_CELLS_ROOTDIR, stack, fn, fn_template % {'fn': fn})
     return fp
 
+
+def get_typical_cell_data_filepath(what, stack, sec=None, fn=None, ext=None):
+
+    if fn is None:
+        assert sec is not None
+        fn = metadata_cache['sections_to_filenames'][stack][sec]
+        if fn in ['Placeholder', 'Nonexisting', 'Rescan']:
+            sys.stderr.write('This section is invalid.\n')
+            return
+
+    if what == 'orientation':
+        fn_template = '%(fn)s_blobOrientations.bp'
+    elif what == 'major':
+        fn_template = '%(fn)s_blobMajorAxisLen.bp'
+    elif what == 'minor':
+        fn_template = '%(fn)s_blobMinorAxisLen.bp'
+    elif what == 'mask_center':
+        fn_template = '%(fn)s_blobMaskCenters.hdf'
+    elif what == 'mask':
+        fn_template = '%(fn)s_blobMasks.hdf'
+    elif what == 'centroid':
+        fn_template = '%(fn)s_blobCentroids.bp'
+    elif what == 'contours':
+        fn_template = '%(fn)s_blobContours.hdf'
+    elif what == 'image':
+        fn_template = '%(fn)s_image.jpg'
+    elif what == 'cells_aligned':
+        fn_template = '%(fn)s_cells_aligned.hdf'
+    elif what == 'cells_aligned_h':
+        fn_template = '%(fn)s_cells_aligned_h.hdf'
+    elif what == 'cells_aligned_v':
+        fn_template = '%(fn)s_cells_aligned_v.hdf'
+    elif what == 'cells_aligned_d':
+        fn_template = '%(fn)s_cells_aligned_d.hdf'
+    elif what == 'cells_aligned_padded':
+        fn_template = '%(fn)s_cells_aligned_padded.bp'
+    elif what == 'cells_aligned_padded_h':
+        fn_template = '%(fn)s_cells_aligned_padded_h.bp'
+    elif what == 'cells_aligned_padded_v':
+        fn_template = '%(fn)s_cells_aligned_padded_v.bp'
+    elif what == 'cells_aligned_padded_d':
+        fn_template = '%(fn)s_cells_aligned_padded_d.bp'
+    elif what == 'neighbors':
+        fn_template = '%(fn)s_neighbors.hdf'
+    elif what == 'neighbor_vectors':
+        fn_template = '%(fn)s_neighbor_vectors.hdf'
+    elif what == 'coords':
+        fn_template = '%(fn)s_blobCoords.hdf'
+    elif what == 'contours_global':
+        fn_template = '%(fn)s_blobContoursGlobal_cellprofiler.hdf'
+    elif what == 'scan_parameters':
+        fn_template = '%(fn)s_ScanParameters.hdf'
+    else:
+        fn_template = '%(fn)s_' + what + '.' + ext
+    # else:
+    #     raise Exception('Not recognized.')
+
+    fp = os.path.join(TYPICAL_CELLS_ROOTDIR, stack, fn, fn_template % {'fn': fn})
+    return fp
+
+
+
+
 def load_cell_data(what, stack, sec=None, fn=None, ext=None):
 
     fp = get_cell_data_filepath(what, stack, sec=sec, fn=fn, ext=ext)
