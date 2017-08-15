@@ -201,7 +201,15 @@ def get_typical_cell_data_filepath(what, stack, sec=None, fn=None, ext=None):
     elif what == 'contours_global':
         fn_template = '%(fn)s_blobContoursGlobal_cellprofiler.hdf'
     elif what == 'scan_parameters':
-        fn_template = '%(fn)s_ScanParameters.hdf'
+        fn_template = '%(fn)s_ScanParameters.pkl'
+    elif what == 'moments_hu':
+        fn_template = '%(fn)s_blobMomentsHu.bp'
+    elif what == 'area':
+        fn_template = '%(fn)s_blobArea.bp'
+    elif what == 'eccentricity':
+        fn_template = '%(fn)s_blobEccentricity.bp'
+    elif what == 'equivalent_diameter':
+        fn_template = '%(fn)s_blobEquivalent_diameter.bp'        
     else:
         fn_template = '%(fn)s_' + what + '.' + ext
     # else:
@@ -221,6 +229,17 @@ def load_cell_data(what, stack, sec=None, fn=None, ext=None):
     download_from_s3(fp)
     data = load_data(fp)
     return data
+
+def load_typica_cell_data(what, stack, sec=None, fn=None, ext=None):
+
+    fp = get_typical_cell_data_filepath(what, stack, sec=sec, fn=fn, ext=ext)
+    if fp is None:
+        raise 'Cannot load data for section %d.'
+    download_from_s3(fp)
+    data = load_data(fp)
+    return data
+
+
 
 def allocate_radial_angular_bins(vectors, anchor_direction, angular_bins, radial_bins):
     """

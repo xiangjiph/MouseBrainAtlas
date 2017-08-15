@@ -368,7 +368,7 @@ def fun_collect_typical_blobs(im_blob_prop,im_label, section, scan_parameters):
     return typical_blobs, matched_paris
     # return typical_blobs
 
-def fun_load_data_collect_typical_blobs(sec, scan_parameters):
+def fun_load_data_collect_typical_blobs(sec, scan_parameters,o_save=False):
     scan_section_range = scan_parameters['scan_section_range']
     sec_load_data_list = range(sec - scan_section_range, sec + scan_section_range + 1)
     scan_section = list(sec_load_data_list)
@@ -395,6 +395,45 @@ def fun_load_data_collect_typical_blobs(sec, scan_parameters):
             sys.stderr.write('Warning: missing section %d'%tempSec)
             scan_section.remove(tempSec)
     n_blobs = {tempSec: len(im_blob_prop[tempSec]) for tempSec in im_blob_prop.keys()}
-    print('Scanning section %d'%sec)
+    #print('Scanning section %d'%sec)
     typical_blobs, matched_pairs = fun_collect_typical_blobs(im_blob_prop=im_blob_prop, im_label=im_label, section=sec,scan_parameters=scan_parameters)
-    return typical_blobs, matched_pairs
+    if o_save==True:
+        save_pickle(scan_parameters,get_typical_cell_data_filepath(what='scan_parameters',stack=stack,sec=sec))        
+        regionprop_List = [tempRecord[2] for tempRecord in typical_blobs]
+        fun_save_regionprops(regionprop_List=regionprop_List, prop_to_save=scan_parameters['prop_to_save'],stack=stack, sec=sec)
+        print('Result saved.')
+        return 0
+    else:
+        return typical_blobs, matched_pairs
+
+
+
+def fun_save_regionprops(regionprop_List, prop_to_save, stack, sec):
+    for tempProp in prop_to_save:
+        tempProp_data = []
+        for record in regionprop_List:
+            tempProp_data.append(record[tempProp])
+        if tempProp == 'coords':
+            tempProp_data = map(lambda data: np.array(data, dtype=np.int16), tempProp_data)
+        elif tempProp == 'moments_hu':
+            tempProp_data = map(lambda data: np.array(data, dtype=np.float32), tempProp_data)
+            tempProp_data = np.row_stack(tuple(tempProp_data))
+        elif tempProp == 'centroid':
+            tempProp_data = map(lambda data: np.array(data, dtype=np.float32), tempProp_data)
+            tempProp_data = np.row_stack(tuple(tempProp_data))
+        elif tempProp == 'area':
+            tempProp_data = np.array(tempProp_data, np.int32)
+        elif tempProp == 'eccentricity':
+            tempProp_data = np.array(tempProp_data, np.float32)
+        elif tempProp == 'equivalent_diameter':
+            tempProp_data = np.array(tempProp_data, np.float32)
+
+        tempFp = get_typical_cell_data_filepath(what=tempProp,stack=stack,sec=sec)
+
+        if tempFp.endswith('.hdf'):
+            save_hdf_v2(tempProp_data, fn=tempFp)
+        elif tempFp.endswith('.bp'):
+            bp.pack_ndarray_file(tempProp_data, tempFp)
+        else:
+            print 'Unrecognized data type. Save failed.'
+    return 0

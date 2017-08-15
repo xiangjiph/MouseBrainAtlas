@@ -183,6 +183,7 @@ def draw_arrow(image, p, q, color, arrow_magnitude=9, thickness=5, line_type=8, 
 def save_hdf_v2(data, fn, key='data'):
     """
     Save data as a hdf file.
+    If data is list
     If data is dict of dict, convert to DataFrame before saving as hdf.
     If data is dict of elementary items, convert to pandas.Series before saving as hdf.
     
@@ -199,6 +200,15 @@ def save_hdf_v2(data, fn, key='data'):
             pandas.DataFrame(data).T.to_hdf(fn, key=key)
         else:
             pandas.Series(data=data).to_hdf(fn, key, mode='w')
+    elif isinstance(data, list):
+        data = pandas.DataFrame(data)
+        data.to_hdf(fn, key=key)
+    else:
+        try: 
+            data = pandas.DataFrame(data)
+            data.to_hdf(fn, key=key)
+        except:
+            print "Save failed"
     
 def load_hdf_v2(fn, key='data'):
     import pandas
