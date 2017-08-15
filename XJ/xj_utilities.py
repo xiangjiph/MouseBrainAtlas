@@ -398,7 +398,9 @@ def fun_load_data_collect_typical_blobs(sec, scan_parameters,o_save=False):
     #print('Scanning section %d'%sec)
     typical_blobs, matched_pairs = fun_collect_typical_blobs(im_blob_prop=im_blob_prop, im_label=im_label, section=sec,scan_parameters=scan_parameters)
     if o_save==True:
-        save_pickle(scan_parameters,get_typical_cell_data_filepath(what='scan_parameters',stack=stack,sec=sec))        
+        tempFp = get_typical_cell_data_filepath(what='scan_parameters',stack=stack,sec=sec)
+        create_if_not_exists(os.path.dirname(tempFp))
+        save_pickle(scan_parameters,tempFp)
         regionprop_List = [tempRecord[2] for tempRecord in typical_blobs]
         fun_save_regionprops(regionprop_List=regionprop_List, prop_to_save=scan_parameters['prop_to_save'],stack=stack, sec=sec)
         print('Result saved.')
@@ -429,7 +431,7 @@ def fun_save_regionprops(regionprop_List, prop_to_save, stack, sec):
             tempProp_data = np.array(tempProp_data, np.float32)
 
         tempFp = get_typical_cell_data_filepath(what=tempProp,stack=stack,sec=sec)
-
+        create_if_not_exists(os.path.dirname(tempFp))
         if tempFp.endswith('.hdf'):
             save_hdf_v2(tempProp_data, fn=tempFp)
         elif tempFp.endswith('.bp'):
