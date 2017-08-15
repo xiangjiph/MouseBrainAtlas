@@ -9,6 +9,9 @@ import matplotlib.pyplot as plt
 import matplotlib
 from shapely.geometry import Polygon as Polygon
 from cell_utilities import *
+from data_manager import *
+from utilities2015 import *
+from metadata import *
 
 ### File management ###
 # save_folder_path = '/shared/MouseBrainAtlasXiang/XJ/Output/detect_cell_alternatives_output/';
@@ -439,3 +442,23 @@ def fun_save_regionprops(regionprop_List, prop_to_save, stack, sec):
         else:
             print 'Unrecognized data type. Save failed.'
     return 0
+
+
+def fun_vis_typical_blob(stack,sec,o_overlay_on_oriImage=True,o_save_image=True):
+    typical_blob_coords = [record[0] for record in load_typical_cell_data(what='coords',stack=stack, sec=sec)]
+    scan_parameters = load_typical_cell_data(what='scan_parameters',stack=stack,sec=sec)
+    temp_vis_tyblob_in_sec,_,_ = fun_reconstruct_labeled_image(typical_blob_coords,oriImL0=scan_parameters['im0max'],oriImL1=scan_parameters['im1max'])
+    
+    if o_overlay_on_oriImage==True:
+        oriImage = DataManager.get_image_filepath(stack=stack,section=sec,resol='lossless', version='cropped')
+        oriImage = imread(oriImage)[scan_parameters['crop_0_min']:scan_parameters['crop_0_max'],scan_parameters['crop_1_min']:scan_parameters['crop_1_max']]
+        cell_contour = skimage.measure.find_contours(temp_vis_tyblob_in_sec>0,0)                                                                
+        for tempContour in cell_contour:
+            cv2.polylines(oriImage, [tempContour[:,::-1].astype(np.int32)], isClosed=True, color=(255,0,0), thickness=3)
+        temp_vis_tyblob_in_sec=oriImage
+    if o_save_image==True:
+        fp = get_typical_cell_data_filepath(what='image',stack=stack,sec=sec)
+        imsave(fp,temp_vis_tyblob_in_sec)
+        return 'Image saved'
+    else:
+        return display_image(temp_vis_tyblob_in_sec)

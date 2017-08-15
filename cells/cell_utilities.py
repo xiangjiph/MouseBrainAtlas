@@ -49,6 +49,7 @@ def normalize_angle(a):
         a = a + np.pi
     return a
 
+       
 def load_data(fp):
 
     if fp.endswith('blobMaskCenters.hdf'):
@@ -60,7 +61,12 @@ def load_data(fp):
     elif fp.endswith('tif'):
         data = imread(fp)
     elif fp.endswith('hdf'):
-        data = load_hdf_v2(fp).tolist()
+        data = load_hdf_v2(fp)
+        try:
+            data = data.tolist()
+        except AttributeError:
+            if type(data)==pandas.core.frame.DataFrame:
+                data = data.values
     elif fp.endswith('pkl'):
         data = pickle.load(open(fp, 'r'))
     else:
@@ -230,7 +236,7 @@ def load_cell_data(what, stack, sec=None, fn=None, ext=None):
     data = load_data(fp)
     return data
 
-def load_typica_cell_data(what, stack, sec=None, fn=None, ext=None):
+def load_typical_cell_data(what, stack, sec=None, fn=None, ext=None):
 
     fp = get_typical_cell_data_filepath(what, stack, sec=sec, fn=fn, ext=ext)
     if fp is None:
