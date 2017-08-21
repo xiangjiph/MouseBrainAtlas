@@ -16,15 +16,16 @@ if hostname == 'yuncong-MacbookPro':
     # REPO_DIR = '/home/yuncong/Brain' # use os.environ['REPO_DIR'] instead
     REPO_DIR = os.environ['REPO_DIR']
     ROOT_DIR = '/home/yuncong'
-    RAW_DATA_DIR = '/home/yuncong/CSHL_data'
-    DATA_DIR = '/media/yuncong/YuncongPublic/CSHL_data_processed'
-    DATA_ROOTDIR = '/media/yuncong/YuncongPublic/CSHL_data_processed'
-    thumbnail_data_dir = '/home/yuncong/CSHL_data_processed'
-    THUMBNAIL_DATA_DIR = '/home/yuncong/CSHL_data_processed'
+    DATA_ROOTDIR = '/media/yuncong/YuncongPublic/'
+    THUMBNAIL_DATA_ROOTDIR = ROOT_DIR
+
+    RAW_DATA_DIR = os.path.join(ROOT_DIR, 'CSHL_data')
+    DATA_DIR = os.path.join(DATA_ROOTDIR, 'CSHL_data_processed')
+    THUMBNAIL_DATA_DIR = os.path.join(THUMBNAIL_DATA_ROOTDIR, 'CSHL_data_processed')
 
     VOLUME_ROOTDIR = '/home/yuncong/CSHL_volumes'
     MESH_ROOTDIR =  '/home/yuncong/CSHL_meshes'
-    REGISTRTION_PARAMETERS_ROOTDIR = '/home/yuncong/CSHL_registration_parameters'
+    REGISTRATION_PARAMETERS_ROOTDIR = '/home/yuncong/CSHL_registration_parameters'
     # ANNOTATION_ROOTDIR = '/home/yuncong/CSHL_data_labelings_losslessAlignCropped'
     ANNOTATION_ROOTDIR = '/home/yuncong/CSHL_labelings_v3'
 
@@ -35,33 +36,52 @@ if hostname == 'yuncong-MacbookPro':
     CLASSIFIER_SETTINGS_CSV = os.path.join(REPO_DIR, 'learning', 'classifier_settings.csv')
     DATASET_SETTINGS_CSV = os.path.join(REPO_DIR, 'learning', 'dataset_settings.csv')
     REGISTRATION_SETTINGS_CSV = os.path.join(REPO_DIR, 'registration', 'registration_settings.csv')
+    PREPROCESS_SETTINGS_CSV = os.path.join(REPO_DIR, 'preprocess', 'preprocess_settings.csv')
+    DETECTOR_SETTINGS_CSV = os.path.join(REPO_DIR, 'learning', 'detector_settings.csv')
 
+    LABELED_NEURONS_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_labeled_neurons')
 
 elif hostname == 'yuncong-Precision-WorkStation-T7500':
     print 'Setting environment for Precision WorkStation'
     HOST_ID = 'workstation'
     ROOT_DIR = '/home/yuncong/'
     DATA_ROOTDIR = '/media/yuncong/BstemAtlasData'
+    # THUMBNAIL_DATA_ROOTDIR = ROOT_DIR
+    THUMBNAIL_DATA_ROOTDIR = DATA_ROOTDIR
+    RAW_DATA_DIR = DATA_ROOTDIR
 
     ON_AWS = False
     S3_DATA_BUCKET = 'mousebrainatlas-data'
     S3_RAWDATA_BUCKET = 'mousebrainatlas-rawdata'
+
     REPO_DIR = os.environ['REPO_DIR']
 
     DATA_DIR = os.path.join(DATA_ROOTDIR, 'CSHL_data_processed')
-    THUMBNAIL_DATA_DIR = DATA_DIR
+    THUMBNAIL_DATA_DIR = os.path.join(THUMBNAIL_DATA_ROOTDIR, 'CSHL_data_processed')
     VOLUME_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_volumes')
-    annotation_rootdir =  os.path.join(ROOT_DIR, 'CSHL_data_labelings_losslessAlignCropped')
+    MESH_ROOTDIR =  '/home/yuncong/CSHL_meshes'
+
+    # annotation_rootdir =  os.path.join(ROOT_DIR, 'CSHL_data_labelings_losslessAlignCropped')
 #     annotation_midbrainIncluded_v2_rootdir = '/home/yuncong/CSHL_labelings_v3/'
     PATCH_FEATURES_ROOTDIR = os.path.join(DATA_ROOTDIR, 'CSHL_patch_features')
+    PATCH_LOCATIONS_ROOTDIR = os.path.join(DATA_ROOTDIR, 'CSHL_patch_locations')
+
+    SCOREMAP_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_scoremaps')
+    SCOREMAP_VIZ_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_scoremap_viz')
+    SPARSE_SCORES_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_patch_scores')
+
     ANNOTATION_ROOTDIR =  os.path.join(ROOT_DIR, 'CSHL_labelings_v3')
     CLF_ROOTDIR =  os.path.join(ROOT_DIR, 'CSHL_classifiers')
 
+    REGISTRATION_PARAMETERS_ROOTDIR = '/home/yuncong/CSHL_registration_parameters'
 
     CLASSIFIER_SETTINGS_CSV = os.path.join(REPO_DIR, 'learning', 'classifier_settings.csv')
     DATASET_SETTINGS_CSV = os.path.join(REPO_DIR, 'learning', 'dataset_settings.csv')
     REGISTRATION_SETTINGS_CSV = os.path.join(REPO_DIR, 'registration', 'registration_settings.csv')
+    PREPROCESS_SETTINGS_CSV = os.path.join(REPO_DIR, 'preprocess', 'preprocess_settings.csv')
+    DETECTOR_SETTINGS_CSV = os.path.join(REPO_DIR, 'learning', 'detector_settings.csv')
 
+    MXNET_MODEL_ROOTDIR = os.path.join(ROOT_DIR, 'mxnet_models')
 
 elif hostname.startswith('ip'):
     print 'Setting environment for AWS compute node'
@@ -72,8 +92,16 @@ elif hostname.startswith('ip'):
     else:
         ROOT_DIR = '/shared'
 
-    DATA_ROOTDIR = '/shared'
-
+    if 'DATA_ROOTDIR' in os.environ:
+        DATA_ROOTDIR = os.environ['DATA_ROOTDIR']
+    else:
+        DATA_ROOTDIR = '/shared'
+        
+    if 'THUMBNAIL_DATA_ROOTDIR' in os.environ:
+        THUMBNAIL_DATA_ROOTDIR = os.environ['THUMBNAIL_DATA_ROOTDIR']
+    else:
+        THUMBNAIL_DATA_ROOTDIR = '/shared'
+    
     ON_AWS = True
     S3_DATA_BUCKET = 'mousebrainatlas-data'
     S3_DATA_BUCKET_Xiang = 'mousebrainatlas-xiang'
@@ -81,15 +109,18 @@ elif hostname.startswith('ip'):
     S3_DATA_DIR = 'CSHL_data_processed'
     REPO_DIR = os.environ['REPO_DIR']
     RAW_DATA_DIR = os.path.join(ROOT_DIR, 'CSHL_data')
-    DATA_DIR = os.path.join(ROOT_DIR, 'CSHL_data_processed')
-    THUMBNAIL_DATA_DIR = os.path.join(ROOT_DIR, 'CSHL_data_processed')
+    DATA_DIR = os.path.join(DATA_ROOTDIR, 'CSHL_data_processed')
+    THUMBNAIL_DATA_DIR = os.path.join(THUMBNAIL_DATA_ROOTDIR, 'CSHL_data_processed')
     VOLUME_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_volumes')
     # SCOREMAP_VIZ_ROOTDIR = '/shared/CSHL_scoremap_viz_Sat16ClassFinetuned_v2'
     ANNOTATION_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_labelings_v3')
     ANNOTATION_VIZ_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_annotation_viz')
     # SVM_ROOTDIR = '/shared/CSHL_patch_features_Sat16ClassFinetuned_v2_classifiers/'
     # SVM_NTBLUE_ROOTDIR = '/shared/CSHL_patch_features_Sat16ClassFinetuned_v2_classifiers_neurotraceBlue/'
-    PATCH_FEATURES_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_patch_features')
+    PATCH_FEATURES_ROOTDIR = os.path.join(DATA_ROOTDIR, 'CSHL_patch_features')
+    PATCH_LOCATIONS_ROOTDIR = os.path.join(DATA_ROOTDIR, 'CSHL_patch_locations')
+    SCOREMAP_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_scoremaps')
+    SCOREMAP_VIZ_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_scoremap_viz')
     SPARSE_SCORES_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_patch_scores')
     REGISTRATION_PARAMETERS_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_registration_parameters')
     REGISTRATION_VIZ_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_registration_visualization')
@@ -117,8 +148,14 @@ elif hostname.startswith('ip'):
     CLASSIFIER_SETTINGS_CSV = os.path.join(REPO_DIR, 'learning', 'classifier_settings.csv')
     DATASET_SETTINGS_CSV = os.path.join(REPO_DIR, 'learning', 'dataset_settings.csv')
     REGISTRATION_SETTINGS_CSV = os.path.join(REPO_DIR, 'registration', 'registration_settings.csv')
+    PREPROCESS_SETTINGS_CSV = os.path.join(REPO_DIR, 'preprocess', 'preprocess_settings.csv')
+    DETECTOR_SETTINGS_CSV = os.path.join(REPO_DIR, 'learning', 'detector_settings.csv')
 
     MXNET_MODEL_ROOTDIR = os.path.join(ROOT_DIR, 'mxnet_models')
+
+    LABELED_NEURONS_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_labeled_neurons')
+    
+    CSHL_SPM_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_SPM')
 
 else:
     print 'Setting environment for Brainstem workstation'
@@ -126,8 +163,18 @@ else:
 #################### Name conversions ##################
 
 def parse_label(label):
+    """
+    Args:
+        a class label
+
+    Returns:
+        (structure name, side, surround margin, surround structure name)
+    """
     import re
-    m = re.match("([0-9a-zA-Z]*)(_(L|R))?(_surround_([0-9]+))?(_([0-9a-zA-Z]*))?", label)
+    try:
+        m = re.match("([0-9a-zA-Z]*)(_(L|R))?(_surround_([0-9]+))?(_([0-9a-zA-Z]*))?", label)
+    except:
+        raise Exception("Parse label error: %s" % label)
     g = m.groups()
     structure_name = g[0]
     side = g[2]
@@ -140,7 +187,7 @@ is_surround_label = lambda label: parse_label(label)[2] is not None
 get_side_from_label = lambda label: parse_label(label)[1]
 get_margin_from_label = lambda label: parse_label(label)[2]
 
-def compose_label(structure_name, side, surround_margin, surround_structure_name):
+def compose_label(structure_name, side=None, surround_margin=None, surround_structure_name=None):
     label = structure_name
     if side is not None:
         label += '_' + side
@@ -153,10 +200,10 @@ def compose_label(structure_name, side, surround_margin, surround_structure_name
 def convert_to_unsided_label(label):
     structure_name, side, surround_margin, surround_structure_name = parse_label(label)
     return compose_label(structure_name, side=None, surround_margin=surround_margin, surround_structure_name=surround_structure_name)
-    
+
 def convert_to_nonsurround_label(name):
     return convert_to_nonsurround_name(name)
-    
+
     # return convert_name_to_unsided(name)
 
 # def convert_name_to_unsided(name):
@@ -215,6 +262,13 @@ from pandas import read_csv
 dataset_settings = read_csv(DATASET_SETTINGS_CSV, header=0, index_col=0)
 classifier_settings = read_csv(CLASSIFIER_SETTINGS_CSV, header=0, index_col=0)
 registration_settings = read_csv(REGISTRATION_SETTINGS_CSV, header=0, index_col=0)
+preprocess_settings = read_csv(PREPROCESS_SETTINGS_CSV, header=0, index_col=0)
+detector_settings = read_csv(DETECTOR_SETTINGS_CSV, header=0, index_col=0)
+windowing_settings = {1: {"patch_size": 224, "spacing": 56}, 
+                      2: {'patch_size':224, 'spacing':56, 'comment':'larger margin'},
+                     3: {'patch_size':224, 'spacing':32, 'comment':'smaller spacing'},
+                     4: {'patch_size':224, 'spacing':128, 'comment':'smaller spacing'},
+                     5: {'patch_size':224, 'spacing':64, 'comment':'smaller spacing'}}
 
 ############ Class Labels #############
 
@@ -229,6 +283,7 @@ all_known_structures_sided = sum([[n] if n in singular_structures
 all_known_structures_sided_surround_only = [convert_to_surround_name(s, margin=200) for s in all_known_structures_sided]
 all_known_structures_sided_with_surround = sorted(all_known_structures_sided + all_known_structures_sided_surround_only)
 all_structures_with_classifiers = sorted([l for l in all_known_structures if l not in {'outerContour', 'sp5'}])
+
 
 linear_landmark_names_unsided = ['outerContour']
 volumetric_landmark_names_unsided = list(set(paired_structures + singular_structures) - set(linear_landmark_names_unsided))
@@ -259,7 +314,7 @@ XY_PIXEL_DISTANCE_TB = XY_PIXEL_DISTANCE_LOSSLESS * 32 # in um, thumbnail
 all_nissl_stacks = ['MD585', 'MD589', 'MD590', 'MD591', 'MD592', 'MD593', 'MD594', 'MD595', 'MD598', 'MD599', 'MD602', 'MD603']
 all_ntb_stacks = ['MD635']
 all_alt_nissl_ntb_stacks = ['MD653', 'MD652', 'MD642']
-all_alt_nissl_tracing_stacks = ['MD657', 'MD658']
+all_alt_nissl_tracing_stacks = ['MD657', 'MD658', 'MD661', 'MD662']
 # all_stacks = all_nissl_stacks + all_ntb_stacks
 all_stacks = all_nissl_stacks + all_ntb_stacks + all_alt_nissl_ntb_stacks + all_alt_nissl_tracing_stacks
 all_annotated_nissl_stacks = ['MD585', 'MD589', 'MD594']
@@ -270,3 +325,15 @@ all_annotated_stacks = all_annotated_nissl_stacks + all_annotated_ntb_stacks
 
 import multiprocessing
 NUM_CORES = multiprocessing.cpu_count()
+
+############## Colors ##############
+
+from utilities2015 import high_contrast_colors
+hc_perm = [ 0,  5, 28, 26, 12, 11,  4,  8, 25, 22,  3,  1, 20, 19, 27, 13, 24,
+       17, 16, 15,  7, 14, 21, 18, 23,  2, 10,  9,  6]
+high_contrast_colors = [high_contrast_colors[i] for i in hc_perm]
+name_sided_to_color = {s: high_contrast_colors[i%len(high_contrast_colors)] 
+                     for i, s in enumerate(all_known_structures_sided) }
+name_unsided_to_color = {s: high_contrast_colors[i%len(high_contrast_colors)] 
+                     for i, s in enumerate(all_known_structures) }
+stack_to_color = {n: high_contrast_colors[i%len(high_contrast_colors)] for i, n in enumerate(all_stacks)}

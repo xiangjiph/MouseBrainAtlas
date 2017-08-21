@@ -6,10 +6,15 @@ echo "export AWS_SECRET_ACCESS_KEY=$3" >> /home/ubuntu/.bashrc
 echo "export AWS_DEFAULT_REGION=$4" >> /home/ubuntu/.bashrc
 
 sudo apt-get update
+sudo apt install awscli
+
+sudo apt install -y python-pip
 
 # Install all Python packages
 sudo pip install --upgrade pip
-sudo pip install numpy scipy matplotlib tables scikit-learn scikit-image multiprocess jupyter bloscpack pandas shapely boto3 opencv-python
+# For shapely
+sudo apt-get install -y libgeos-dev
+sudo pip install numpy scipy matplotlib tables scikit-learn scikit-image multiprocess jupyter bloscpack pandas shapely boto3 opencv-python numdifftools
 
 # Install other utility programs
 sudo apt-get install -y tree screen
@@ -59,9 +64,6 @@ echo "sudosgeadmin() { sudo -u sgeadmin -i \$1; }" >> /home/ubuntu/.bashrc
 # after manually changing it in the aws web console.
 echo "increase_ebs_size() { sudo resize2fs /dev/xvdb; }" >> /home/ubuntu/.bashrc
 
-# Set an alias for starting the notebook.
-echo "start_notebook() { jupyter notebook --notebook-dir \$1 & }" >> /home/ubuntu/.bashrc
-
 #################################
 
 # Code repo
@@ -71,3 +73,17 @@ chown -R ubuntu $REPO_DIR
 
 # Set environment variable.
 echo "export REPO_DIR=$REPO_DIR" >> /home/ubuntu/.bashrc
+
+#####################################
+
+# Install imagemagick
+sudo apt-get install -y imagemagick
+
+##################################
+
+# Start the notebook if is master. - Does not work
+. /etc/cfncluster/cfnconfig
+
+if [ "$cfn_node_type" == "MasterServer" ]; then
+    screen -d -m bash -c "jupyter notebook /shared/MouseBrainAtlas"
+fi

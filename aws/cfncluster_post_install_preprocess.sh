@@ -6,10 +6,15 @@ echo "export AWS_SECRET_ACCESS_KEY=$3" >> /home/ubuntu/.bashrc
 echo "export AWS_DEFAULT_REGION=$4" >> /home/ubuntu/.bashrc
 
 sudo apt-get update
+sudo apt install awscli
+
+sudo apt install -y python-pip
 
 # Install all Python packages
 sudo pip install --upgrade pip
-sudo pip install numpy scipy matplotlib tables scikit-learn scikit-image multiprocess jupyter bloscpack pandas shapely boto3 opencv-python
+# For shapely
+sudo apt-get install -y libgeos-dev
+sudo pip install numpy scipy matplotlib tables scikit-learn scikit-image multiprocess jupyter bloscpack pandas shapely boto3 opencv-python numdifftools
 
 # Install other utility programs
 sudo apt-get install -y tree screen
@@ -82,5 +87,5 @@ sudo apt-get install -y imagemagick
 
 # Kakadu
 wget http://kakadusoftware.com/wp-content/uploads/2014/06/KDU79_Demo_Apps_for_Linux-x86-64_170108.zip
-unzip KDU79_Demo_Apps_for_Linux-x86-64_170108.zip -d /home/ubuntu/
+unzip -o KDU79_Demo_Apps_for_Linux-x86-64_170108.zip -d /home/ubuntu/
 

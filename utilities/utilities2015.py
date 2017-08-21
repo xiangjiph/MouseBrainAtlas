@@ -8,7 +8,7 @@ from operator import itemgetter
 from subprocess import check_output, call
 import json
 import cPickle as pickle
-import datetime
+from datetime import datetime
 
 from multiprocess import Pool
 from skimage.io import imread, imsave
@@ -26,17 +26,160 @@ import bloscpack as bp
 from ipywidgets import FloatProgress
 from IPython.display import display
 
+def jaccard_masks(m1, m2, wrt_min=False):
+    """
+    Args:
+        m1 (ndarray of boolean):
+        m2 (ndarray of boolean):
+        wrt_min (bool): If true, the denominator is the minimum between two masks.
+    """
+    if wrt_min:
+        return np.count_nonzero(m1 & m2) / float(min(np.count_nonzero(m1), np.count_nonzero(m2)))
+    else:
+        return np.count_nonzero(m1 & m2) / float(np.count_nonzero(m1 | m2))
+
+def dice(hm, hf):
+    """
+    Compute the Dice similarity index between two boolean images. The value ranges between 0 and 1.
+    """
+    return 2 * np.count_nonzero(hm & hf) / float(np.count_nonzero(hm) + np.count_nonzero(hf))
+
+def get_overall_bbox(vol_bbox_tuples=None, bboxes=None):
+    if bboxes is None:
+        bboxes = np.array([b for v, b in vol_bbox_tuples])
+    xmin, ymin, zmin = np.min(bboxes[:, [0,2,4]], axis=0)
+    xmax, ymax, zmax = np.max(bboxes[:, [1,3,5]], axis=0)
+    bbox = xmin, xmax, ymin, ymax, zmin, zmax
+    return bbox
+
+def crop_and_pad_volumes(out_bbox=None, vol_bbox_dict=None, vol_bbox_tuples=None):
+    """
+    Args:
+        out_bbox ((6,)-array): the output bounding box, must use the same reference system as the vol_bbox input.
+        vol_bbox_dict (dict {key: (vol, bbox)})
+        vol_bbox_tuples (list of (vol, bbox) tuples)
+        
+    Returns:
+        list of 3d arrays
+    """
+    if vol_bbox_tuples is not None:
+        vols = [crop_and_pad_volume(v, in_bbox=b, out_bbox=out_bbox) for (v, b) in vol_bbox_tuples]
+    elif vol_bbox_dict is not None:
+        vols = {l: crop_and_pad_volume(v, in_bbox=b, out_bbox=out_bbox) for l, (v, b) in vol_bbox_dict.iteritems()}
+    return vols
+
+def convert_vol_bbox_dict_to_overall_vol(vol_bbox_dict=None, vol_bbox_tuples=None, vol_origin_dict=None):
+    """
+    Args:
+        vol_bbox_dict (dict {key: (vol, bbox)})
+        
+    Returns:
+        (list of 3d arrays, (6,)-ndarray): (list of volumes in overall coordinate system, the common overall bounding box)
+    """
+    
+    if vol_origin_dict is not None:
+        vol_bbox_dict = {k: (v, (o[0], o[0]+v.shape[1]-1, o[1], o[1]+v.shape[0]-1, o[2], o[2]+v.shape[2]-1)) for k,(v,o) in vol_origin_dict.iteritems()}
+                         
+    if vol_bbox_dict is not None:
+        volume_bbox = get_overall_bbox(vol_bbox_tuples=vol_bbox_dict.values())
+        volumes = crop_and_pad_volumes(out_bbox=volume_bbox, vol_bbox_dict=vol_bbox_dict)
+    else:
+        volume_bbox = get_overall_bbox(vol_bbox_tuples=vol_bbox_tuples)
+        volumes = crop_and_pad_volumes(out_bbox=volume_bbox, vol_bbox_tuples=vol_bbox_tuples)
+    return volumes, np.array(volume_bbox)
+
+
+def crop_and_pad_volume(in_vol, in_bbox=None, out_bbox=None):
+    """
+    Args:
+        in_bbox ((6,) array): the bounding box that the input volume is defined on. If None, assume origin is at (0,0,0) of the input volume.
+        out_bbox ((6,) array): the bounding box that the output volume is defined on.
+    """
+    
+    if in_bbox is None:
+        in_xmin = 0
+        in_ymin = 0
+        in_zmin = 0
+        in_xmax = in_vol.shape[1] - 1
+        in_ymax = in_vol.shape[0] - 1
+        in_zmax = in_vol.shape[2] - 1
+    else:
+        in_bbox = np.array(in_bbox).astype(np.int)
+        in_xmin, in_xmax, in_ymin, in_ymax, in_zmin, in_zmax = in_bbox
+    in_xdim = in_xmax - in_xmin + 1
+    in_ydim = in_ymax - in_ymin + 1
+    in_zdim = in_zmax - in_zmin + 1
+        # print 'in', in_xdim, in_ydim, in_zdim
+    
+    if out_bbox is None:
+        out_xmin = 0
+        out_ymin = 0
+        out_zmin = 0
+        out_xmax = in_xmax
+        out_ymax = in_ymax
+        out_zmax = in_zmax
+    else:
+        out_bbox = np.array(out_bbox).astype(np.int)
+        out_xmin, out_xmax, out_ymin, out_ymax, out_zmin, out_zmax = out_bbox
+    out_xdim = out_xmax - out_xmin + 1
+    out_ydim = out_ymax - out_ymin + 1
+    out_zdim = out_zmax - out_zmin + 1
+        # print 'out', out_xdim, out_ydim, out_zdim
+    
+    if out_xmin > in_xmax or out_xmax < in_xmin or out_ymin > in_ymax or out_ymax < in_ymin or out_zmin > in_zmax or out_zmax < in_zmin:
+        return np.zeros((out_ydim, out_xdim, out_zdim), np.int)
+    
+    if out_xmax > in_xmax:
+        in_vol = np.pad(in_vol, pad_width=[(0,0),(0, out_xmax-in_xmax),(0,0)], mode='constant', constant_values=0)
+        # print 'pad x'
+    if out_ymax > in_ymax:
+        in_vol = np.pad(in_vol, pad_width=[(0, out_ymax-in_ymax),(0,0),(0,0)], mode='constant', constant_values=0)
+        # print 'pad y'
+    if out_zmax > in_zmax:
+        in_vol = np.pad(in_vol, pad_width=[(0,0),(0,0),(0, out_zmax-in_zmax)], mode='constant', constant_values=0)
+        # print 'pad z'
+    
+    out_vol = np.zeros((out_ydim, out_xdim, out_zdim), in_vol.dtype)
+    ymin = max(in_ymin, out_ymin)
+    xmin = max(in_xmin, out_xmin)
+    zmin = max(in_zmin, out_zmin)
+    ymax = out_ymax
+    xmax = out_xmax
+    zmax = out_zmax
+    # print 'in_vol', np.array(in_vol.shape)[[1,0,2]]
+    # print xmin, xmax, ymin, ymax, zmin, zmax
+    # print xmin-in_xmin, xmax+1-in_xmin
+    # assert ymin >= 0 and xmin >= 0 and zmin >= 0
+    out_vol[ymin-out_ymin:ymax+1-out_ymin, 
+            xmin-out_xmin:xmax+1-out_xmin, 
+            zmin-out_zmin:zmax+1-out_zmin] = in_vol[ymin-in_ymin:ymax+1-in_ymin, xmin-in_xmin:xmax+1-in_xmin, zmin-in_zmin:zmax+1-in_zmin]
+    
+    assert out_vol.shape[1] == out_xdim
+    assert out_vol.shape[0] == out_ydim
+    assert out_vol.shape[2] == out_zdim
+    
+    return out_vol
+
+def rescale_intensity_v2(im, low, high):
+    from skimage.exposure import rescale_intensity
+    if low > high:
+        im_out = rescale_intensity(low-im.astype(np.int), (0, low-high), (0, 255)).astype(np.uint8)
+    else:
+        im_out = rescale_intensity(im.astype(np.int), (low, high), (0, 255)).astype(np.uint8)
+    return im_out
+
+
 def visualize_blob_contour(binary_img, bg_img):
     """
-    Args: 
+    Args:
         binary_img: the binary image
         rgb_img: the background image
-    
+
     Returns:
         Contoured image.
     """
     from registration_utilities import find_contour_points
-    
+
     viz = gray2rgb(bg_img)
     for cnt in find_contour_points(binary_img)[1]:
         cv2.polylines(viz, [cnt.astype(np.int)], isClosed=True, color=(255,0,0), thickness=2)
@@ -142,7 +285,11 @@ def create_parent_dir_if_not_exists(fp):
 
 def create_if_not_exists(path):
     if not os.path.exists(path):
-        os.makedirs(path)
+        try:
+            os.makedirs(path)
+        except Exception as e:
+            sys.stderr.write('%s\n' % e);
+
     return path
 
 def execute_command(cmd):
@@ -150,10 +297,10 @@ def execute_command(cmd):
 
     try:
         retcode = call(cmd, shell=True)
-        if retcode < 0:
-            print >>sys.stderr, "Child was terminated by signal", -retcode
-        else:
-            print >>sys.stderr, "Child returned", retcode
+        # if retcode < 0:
+            # print >>sys.stderr, "Child was terminated by signal", -retcode
+        # else:
+            # print >>sys.stderr, "Child returned", retcode
         return retcode
     except OSError as e:
         print >>sys.stderr, "Execution failed:", e
@@ -178,26 +325,27 @@ def draw_arrow(image, p, q, color, arrow_magnitude=9, thickness=5, line_type=8, 
     int(q[1] + arrow_magnitude * np.sin(angle - np.pi/4)))
     # draw second half of arrow head
     cv2.line(image, p, q, color, thickness, line_type, shift)
-    
 
-def save_hdf_v2(data, fn, key='data'):
+
+def save_hdf_v2(data, fn, key='data', mode='w'):
     """
     Save data as a hdf file.
     If data is list
     If data is dict of dict, convert to DataFrame before saving as hdf.
     If data is dict of elementary items, convert to pandas.Series before saving as hdf.
-    
+
     Args:
         data (pandas.DataFrame, dict or dict of dict)
+        mode (str): if 'w', overwrite original content. If 'a', append.
     """
-    
+
     import pandas
     create_parent_dir_if_not_exists(fn)
     if isinstance(data, pandas.DataFrame):
-        data.to_hdf(fn, key=key)
+        data.to_hdf(fn, key=key, mode=mode) # important to set mode='w', default is 'a' (append)
     elif isinstance(data, dict):
         if isinstance(data.values()[0], dict): # dict of dict
-            pandas.DataFrame(data).T.to_hdf(fn, key=key)
+            pandas.DataFrame(data).T.to_hdf(fn, key=key, mode='w')
         else:
             pandas.Series(data=data).to_hdf(fn, key, mode='w')
     elif isinstance(data, list):
@@ -210,6 +358,7 @@ def save_hdf_v2(data, fn, key='data'):
         except:
             print "Save failed"
     
+
 def load_hdf_v2(fn, key='data'):
     import pandas
     return pandas.read_hdf(fn, key)
@@ -426,7 +575,7 @@ def pad_patches_to_same_size(vizs, pad_value=0, keep_center=False, common_shape=
     if ndim == 2:
         common_box = (pad_value*np.ones((common_shape[0], common_shape[1]))).astype(dt)
     elif ndim == 3:
-        common_box = (pad_value*np.ones((common_shape[0], common_shape[1], 3))).astype(dt)
+        common_box = (pad_value*np.ones((common_shape[0], common_shape[1], p.shape[2]))).astype(dt)
 
     patches_padded = []
     for p in vizs:
@@ -496,17 +645,83 @@ def pad_patches_to_same_size(vizs, pad_value=0, keep_center=False, common_shape=
 #
 #     return patches_padded
 
-def display_volume_sections(vol, every=5, ncols=5, **kwargs):
-    zmin, zmax = bbox_3d(vol)[4:]
-    zs = range(zmin+1, zmax, every)
-    vizs = [vol[..., z] for z in zs]
-    titles = ['z=%d' % z  for z in zs]
+def display_volume_sections_checkerboard(vol_f, vol_m, every=5, ncols=5, direction='z', start_level=None, **kwargs):
+    """
+    Args:
+        direction (str): x,y or z
+    """
+
+    assert vol_f.shape == vol_m.shape
+
+    if direction == 'z':
+        zmin, zmax = bbox_3d(vol)[4:]
+        if start_level is None:
+            zs = range(zmin+1, zmax, every)
+        else:
+            zs = range(start_level, zmax, every)
+        vizs = [vol[:, :, z] for z in zs]
+        titles = ['z=%d' % z  for z in zs]
+    elif direction == 'x':
+        xmin, xmax = bbox_3d(vol)[:2]
+        if start_level is None:
+            xs = range(xmin+1, xmax, every)
+        else:
+            xs = range(start_level, xmax, every)
+        vizs = [vol[:, x, :] for x in xs]
+        titles = ['x=%d' % x for x in xs]
+    elif direction == 'y':
+        ymin, ymax = bbox_3d(vol)[2:4]
+        if start_level is None:
+            ys = range(ymin+1, ymax, every)
+        else:
+            ys = range(start_level, ymax, every)
+        vizs = [vol[y, :, :] for y in ys]
+        titles = ['y=%d' % y for y in ys]
+
     display_images_in_grids(vizs, nc=ncols, titles=titles, **kwargs)
 
+
+def display_volume_sections(vol, every=5, ncols=5, direction='z', start_level=None, **kwargs):
+    """
+    Args:
+        direction (str): x,y or z
+    """
+
+    if direction == 'z':
+        zmin, zmax = bbox_3d(vol)[4:]
+        if start_level is None:
+            zs = range(zmin, zmax+1, every)
+        else:
+            zs = range(start_level, zmax+1, every)
+        vizs = [vol[:, :, z] for z in zs]
+        titles = ['z=%d' % z  for z in zs]
+    elif direction == 'x':
+        xmin, xmax = bbox_3d(vol)[:2]
+        if start_level is None:
+            xs = range(xmin, xmax+1, every)
+        else:
+            xs = range(start_level, xmax+1, every)
+        vizs = [vol[:, x, :] for x in xs]
+        titles = ['x=%d' % x for x in xs]
+    elif direction == 'y':
+        ymin, ymax = bbox_3d(vol)[2:4]
+        if start_level is None:
+            ys = range(ymin, ymax+1, every)
+        else:
+            ys = range(start_level, ymax+1, every)
+        vizs = [vol[y, :, :] for y in ys]
+        titles = ['y=%d' % y for y in ys]
+
+    display_images_in_grids(vizs, nc=ncols, titles=titles, **kwargs)
+    
+    
 def display_images_in_grids(vizs, nc, titles=None, export_fn=None, maintain_shape=True, **kwargs):
-
+    """
+    Args:
+        draw_contours (list of (n,2)-ndarray of (x,y) vertices)
+    """
+    
     if maintain_shape:
-
         vizs = pad_patches_to_same_size(vizs)
 
     n = len(vizs)
@@ -520,6 +735,8 @@ def display_images_in_grids(vizs, nc, titles=None, export_fn=None, maintain_shap
         if i >= n:
             axes[i].axis('off');
         else:
+            if vizs[i].dtype == np.float16:
+                vizs[i] = vizs[i].astype(np.float32)
             axes[i].imshow(vizs[i], **kwargs);
             if titles is not None:
                 axes[i].set_title(titles[i], fontsize=30);
@@ -674,13 +891,19 @@ def alpha_blending(src_rgb, dst_rgb, src_alpha, dst_alpha):
 
     if dst_rgb.dtype == np.uint8:
         dst_rgb = img_as_float(dst_rgb)
+        
+    if src_rgb.ndim == 2:
+        src_rgb = gray2rgb(src_rgb)
+    
+    if dst_rgb.ndim == 2:
+        dst_rgb = gray2rgb(dst_rgb)
 
     if isinstance(src_alpha, float) or  isinstance(src_alpha, int):
         src_alpha = src_alpha * np.ones((src_rgb.shape[0], src_rgb.shape[1]))
 
     if isinstance(dst_alpha, float) or  isinstance(dst_alpha, int):
         dst_alpha = dst_alpha * np.ones((dst_rgb.shape[0], dst_rgb.shape[1]))
-
+        
     out_alpha = src_alpha + dst_alpha * (1. - src_alpha)
     out_rgb = (src_rgb * src_alpha[..., None] +
                dst_rgb * dst_alpha[..., None] * (1. - src_alpha[..., None])) / out_alpha[..., None]
@@ -747,7 +970,7 @@ def apply_function_to_dict(func, d):
     Args:
         func:
             a function that takes as input the list consisting of a flatten list of values of `d`, and return a list.
-        d (dict {key: list}): 
+        d (dict {key: list}):
     """
     from itertools import chain
     result = func(list(chain(*d.values())))
@@ -848,5 +1071,3 @@ def write_dict_to_txt(d, fn, fmt='%f'):
     with open(fn, 'w') as f:
         for k, vals in d.iteritems():
             f.write(k + ' ' +  (' '.join([fmt]*len(vals))) % tuple(vals) + '\n')
-
-            

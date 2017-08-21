@@ -6,12 +6,14 @@ from collections import deque
 import numpy as np
 sys.path.append(os.path.join(os.environ['REPO_DIR'], 'preprocess'))
 import morphsnakes
+from skimage.measure import label
 
 sys.path.append(os.path.join(os.environ['REPO_DIR'], 'utilities'))
 from utilities2015 import *
 from metadata import *
 from registration_utilities import find_contour_points
 from annotation_utilities import contours_to_mask
+from skimage.measure import label
 
 # DEFAULT_BORDER_DISSIMILARITY_PERCENTILE = 30
 # DEFAULT_FOREGROUND_DISSIMILARITY_THRESHOLD = .2
@@ -34,6 +36,94 @@ PIXEL_CHANGE_TERMINATE_CRITERIA = 3
 # AREA_CHANGE_RATIO_MAX = 1.2
 AREA_CHANGE_RATIO_MAX = 10.0
 AREA_CHANGE_RATIO_MIN = .1
+
+
+def parameter_elastix_parameter_file_to_dict(filename):
+    d = {}
+    with open(filename, 'r') as f:
+        for line in f.readlines():
+            if line.startswith('('):
+                tokens = line[1:-2].split(' ')
+                key = tokens[0]
+                if len(tokens) > 2:
+                    value = []
+                    for v in tokens[1:]:
+                        try:
+                            value.append(float(v))
+                        except ValueError:
+                            value.append(v)
+                else:
+                    v = tokens[1]
+                    try:
+                        value = (float(v))
+                    except ValueError:
+                        value = v
+                d[key] = value
+
+        return d
+
+def parse_elastix_parameter_file(filepath, tf_type=None):
+    """
+    Parse elastix parameter result file.
+    """
+    
+    d = parameter_elastix_parameter_file_to_dict(filepath)
+    
+    if tf_type is None:
+        # For alignment composition script
+        rot_rad, x_mm, y_mm = d['TransformParameters']
+        center = np.array(d['CenterOfRotationPoint']) / np.array(d['Spacing'])
+        # center[1] = d['Size'][1] - center[1]
+
+        xshift = x_mm / d['Spacing'][0]
+        yshift = y_mm / d['Spacing'][1]
+
+        R = np.array([[np.cos(rot_rad), -np.sin(rot_rad)],
+                      [np.sin(rot_rad), np.cos(rot_rad)]])
+        shift = center + (xshift, yshift) - np.dot(R, center)
+        T = np.vstack([np.column_stack([R, shift]), [0,0,1]])
+        return T
+    
+    elif tf_type == 'rigid3d':
+        p = np.array(d['TransformParameters'])
+        center = np.array(d['CenterOfRotationPoint']) / np.array(d['Spacing'])
+        shift = p[3:] / np.array(d['Spacing'])
+        
+        thetax, thetay, thetaz = p[:3]
+        # Important to use the negative angle.
+        cx = np.cos(-thetax)
+        cy = np.cos(-thetay)
+        cz = np.cos(-thetaz)
+        sx = np.sin(-thetax)
+        sy = np.sin(-thetay)
+        sz = np.sin(-thetaz)
+        Rx = np.array([[1,0,0], [0, cx, sx],[0, -sx, cx]])
+        Ry = np.array([[cy, 0, sy],[0, 1, 0], [-sy,0, cy]])
+        Rz = np.array([[cz, sz, 0],[-sz, cz, 0], [0,0,1]])
+
+        R = np.dot(np.dot(Rz, Ry), Rx)
+        # R = np.dot(np.dot(Rx, Ry), Rz)
+        # The order could be Rx,Ry,Rz - not sure.
+        
+        return R, shift, center
+    
+    elif tf_type == 'affine3d':
+        p = np.array( d['TransformParameters'])
+        L = p[:9].reshape((3,3))
+        shift = p[9:] / np.array(d['Spacing'])
+        center = np.array(d['CenterOfRotationPoint']) / np.array(d['Spacing'])
+        # shift = center + shift - np.dot(L, center)
+        # T = np.column_stack([L, shift])
+        return L, shift, center
+    
+    elif tf_type == 'bspline3d':
+        n_params = d['NumberOfParameters']
+        p = np.array(d['TransformParameters'])
+        grid_size = d['GridSize']
+        grid_spacing = d['GridSpacing']
+        grid_origin = d['GridOrigin']
+        
+        return L, shift, center
 
 def brightfieldize_image(img):
     border = np.median(np.concatenate([img[:10, :].flatten(), img[-10:, :].flatten(), img[:, :10].flatten(), img[:, -10:].flatten()]))

@@ -9,6 +9,10 @@ from shapely.geometry import Polygon
 from pandas import read_hdf, DataFrame, read_csv
 from itertools import groupby
 from collections import defaultdict
+try:
+    import mxnet as mx
+except:
+    sys.stderr.write("Cannot import mxnet.\n")
 
 sys.path.append(os.environ['REPO_DIR'] + '/utilities')
 from utilities2015 import *
@@ -17,13 +21,142 @@ from data_manager import *
 from visualization_utilities import *
 from annotation_utilities import *
 
-def load_dataset_addresses(dataset_ids, labels_to_sample, clf_rootdir=CLF_ROOTDIR):
+def plot_roc_curve(fp_allthresh, tp_allthresh, optimal_th, title=''):
+    """
+    Plot ROC curve.
+    """
+
+    plt.plot([fp_allthresh[th] for th in np.arange(0, 1, 0.01)],
+             [tp_allthresh[th] for th in np.arange(0, 1, 0.01)]);
+
+    plt.scatter(fp_allthresh[optimal_th], tp_allthresh[optimal_th], 
+                marker='o', facecolors='none', edgecolors='k')
+    
+    plt.plot(np.arange(0, 1, 0.01), np.arange(0, 1, 0.01), c='k', linestyle='--');
+    
+    plt.legend();
+    plt.axis('equal');
+    plt.ylabel('True positive rate');
+    plt.xlabel('False positive rate');
+    plt.title(title);
+    plt.show();
+    
+def plot_pr_curve(precision_allthresh, recall_allthresh, optimal_th, title=''):
+    """
+    Plot precision-recall curve. X axis is recall and y axis is precision.
+    """
+
+    plt.plot([recall_allthresh[th] for th in np.arange(0, 1, 0.01)],
+             [precision_allthresh[th] for th in np.arange(0, 1, 0.01)]);
+
+    plt.scatter(recall_allthresh[optimal_th], precision_allthresh[optimal_th], 
+                marker='o', facecolors='none', edgecolors='k')
+        
+    plt.legend();
+    plt.axis('equal');
+    plt.ylabel('Precision');
+    plt.xlabel('Recall');
+    plt.title(title);
+    plt.show();
+
+def load_mxnet_model(model_dir_name, model_name, num_gpus=8, batch_size = 256):
+    download_from_s3(os.path.join(MXNET_MODEL_ROOTDIR, model_dir_name), is_dir=True)
+    model_iteration = 0
+    output_symbol_name = 'flatten_output'
+    output_dim = 1024
+    mean_img = np.load(os.path.join(MXNET_MODEL_ROOTDIR, model_dir_name, 'mean_224.npy'))
+
+    # Reference on how to predict with mxnet model:
+    # https://github.com/dmlc/mxnet-notebooks/blob/master/python/how_to/predict.ipynb
+    model0, arg_params, aux_params = mx.model.load_checkpoint(os.path.join(MXNET_MODEL_ROOTDIR, model_dir_name, model_name), 0)
+    flatten_output = model0.get_internals()[output_symbol_name]
+    # if HOST_ID == 'workstation':
+    # model = mx.mod.Module(context=[mx.gpu(i) for i in range(1)], symbol=flatten_output)
+    # else:
+    model = mx.mod.Module(context=[mx.gpu(i) for i in range(num_gpus)], symbol=flatten_output)
+
+    # Increase batch_size to 500 does not save any time.
+    model.bind(data_shapes=[('data', (batch_size,1,224,224))], for_training=False)
+    model.set_params(arg_params=arg_params, aux_params=aux_params, allow_missing=True)
+    return model, mean_img
+
+def convert_image_patches_to_features(patches, model, mean_img, batch_size):
+    """
+    Args:
+        patches (list of (224,224)-ndarrays of uint8)
+        model (mxnet.Module)
+        mean_img ((224,224)-ndarray of uint8) : the mean image
+        batch_size (int): batch size, must match the batch size specified for the model.
+    """
+    patches_mean_subtracted = patches - mean_img
+    patches_mean_subtracted_input = patches_mean_subtracted[:, None, :, :] # n x 1 x 224 x 224
+
+    if len(patches) < batch_size:
+        n_pad = batch_size - len(patches)
+        patches_mean_subtracted_input = np.concatenate([patches_mean_subtracted_input, np.zeros((n_pad,1) + mean_img.shape, mean_img.dtype)])
+    
+    print patches_mean_subtracted_input.shape
+    data_iter = mx.io.NDArrayIter(
+                    patches_mean_subtracted_input, 
+                    batch_size=batch_size,
+                    shuffle=False)
+    outputs = model.predict(data_iter, always_output_list=True)
+    features = outputs[0].asnumpy()
+    
+    if len(patches) < batch_size:
+        features = features[:len(patches)]
+
+    return features
+
+def rotate_all_patches_variant(patches, variant):
+    """
+    Args:
+        Variant (int): one of 0 to 7.
+    """
+
+    if variant == 0:
+        patches_variant = patches
+    elif variant == 1:
+        patches_variant = [p.T[::-1] for p in patches]
+    elif variant == 2:
+        patches_variant = [p[::-1] for p in patches]
+    elif variant == 3:
+        patches_variant = [p[:, ::-1] for p in patches]
+    elif variant == 4:
+        patches_variant = [p[::-1, ::-1] for p in patches]
+    elif variant == 5:
+        patches_variant = [p.T for p in patches]
+    elif variant == 6:
+        patches_variant = [p.T[::-1, ::-1] for p in patches]
+    elif variant == 7:
+        patches_variant = [p.T[:, ::-1] for p in patches]
+    return patches_variant
+
+def rotate_all_patches(patches_enlarged, r, output_size=224):
+    """
+    Args:
+        patches_enlarged: 
+        r (int): rotation angle in degrees
+        output_size (int): size of output patches
+    """
+    
+    half_size = output_size/2
+    patches_rotated = img_as_ubyte(np.array([rotate(p, angle=r)[p.shape[1]/2-half_size:p.shape[1]/2+half_size, 
+                                                                p.shape[0]/2-half_size:p.shape[0]/2+half_size] 
+                                             for p in patches_enlarged]))
+    return patches_rotated
+
+
+def load_dataset_addresses(dataset_ids, labels_to_sample=None, clf_rootdir=CLF_ROOTDIR):
     merged_addresses = {}
 
     for dataset_id in dataset_ids:
         addresses_fp = DataManager.get_dataset_addresses_filepath(dataset_id=dataset_id)
         download_from_s3(addresses_fp)
         addresses_curr_dataset = load_pickle(addresses_fp)
+        
+        if labels_to_sample is None:
+            labels_to_sample = addresses_curr_dataset.keys()
 
         for label in labels_to_sample:
             try:
@@ -37,7 +170,108 @@ def load_dataset_addresses(dataset_ids, labels_to_sample, clf_rootdir=CLF_ROOTDI
 
     return merged_addresses
 
-def load_datasets(dataset_ids, labels_to_sample, clf_rootdir=CLF_ROOTDIR):
+def load_dataset_images(dataset_ids, labels_to_sample=None, clf_rootdir=CLF_ROOTDIR):
+    
+    merged_patches = {}
+    merged_addresses = {}
+
+    for dataset_id in dataset_ids:
+
+        # load training addresses
+        
+#         addresses_fp = DataManager.get_dataset_addresses_filepath(dataset_id=dataset_id)
+#         download_from_s3(addresses_fp)
+#         addresses_curr_dataset = load_pickle(addresses_fp)
+        
+        # Load training features
+        
+        import re
+        if labels_to_sample is None:
+            labels_to_sample = []
+            for dataset_id in dataset_ids:
+                dataset_dir = DataManager.get_dataset_dir(dataset_id=dataset_id)
+                download_from_s3(dataset_dir, is_dir=True)
+                for fn in os.listdir(dataset_dir):
+                    g = re.match('patch_images_(.*).hdf', fn).groups()
+                    if len(g) > 0:
+                        labels_to_sample.append(g[0])
+        
+        for label in labels_to_sample:
+            try:
+                # patches_curr_dataset_label_fp = os.path.join(CLF_ROOTDIR, 'datasets', 'dataset_%d' % dataset_id, 'patch_images_%s.hdf' % label)
+                patches_curr_dataset_label_fp = DataManager.get_dataset_patches_filepath(dataset_id=dataset_id, structure=label)
+                download_from_s3(patches_curr_dataset_label_fp)
+                patches = bp.unpack_ndarray_file(patches_curr_dataset_label_fp)
+                
+                if label not in merged_patches:
+                    merged_patches[label] = patches
+                else:
+                    merged_patches[label] = np.vstack([merged_patches[label], patches])
+                
+                addresses_fp = DataManager.get_dataset_addresses_filepath(dataset_id=dataset_id, structure=label)
+                download_from_s3(addresses_fp)
+                addresses = load_pickle(addresses_fp)
+                    
+                if label not in merged_addresses:
+                    merged_addresses[label] = addresses
+                else:
+                    merged_addresses[label] += addresses
+
+            except Exception as e:
+                # sys.stderr.write("Cannot load dataset %d images for label %s: %s\n" % (dataset_id, label, str(e)))
+                continue
+                                
+    return merged_patches, merged_addresses
+
+
+def load_datasets_bp(dataset_ids, labels_to_sample=None, clf_rootdir=CLF_ROOTDIR):
+    
+    merged_features = {}
+    merged_addresses = {}
+
+    for dataset_id in dataset_ids:
+
+        if labels_to_sample is None:
+            import re
+            labels_to_sample = []
+            for dataset_id in dataset_ids:
+                dataset_dir = DataManager.get_dataset_dir(dataset_id=dataset_id)
+                download_from_s3(dataset_dir, is_dir=True)
+                for fn in os.listdir(dataset_dir):
+                    g = re.match('patch_features_(.*).bp', fn).groups()
+                    if len(g) > 0:
+                        labels_to_sample.append(g[0])
+        
+        for label in labels_to_sample:
+            try:
+                # Load training features
+
+                features_fp = DataManager.get_dataset_features_filepath(dataset_id=dataset_id, structure=label)
+                download_from_s3(features_fp)
+                features = bp.unpack_ndarray_file(features_fp)
+            
+                # load training addresses
+
+                addresses_fp = DataManager.get_dataset_addresses_filepath(dataset_id=dataset_id, structure=label)
+                download_from_s3(addresses_fp)
+                addresses = load_pickle(addresses_fp)
+
+                if label not in merged_features:
+                    merged_features[label] = features
+                else:
+                    merged_features[label] = np.concatenate([merged_features[label], features])
+
+                if label not in merged_addresses:
+                    merged_addresses[label] = addresses
+                else:
+                    merged_addresses[label] += addresses
+
+            except Exception as e:
+                continue
+                                
+    return merged_features, merged_addresses
+
+def load_datasets(dataset_ids, labels_to_sample=None, clf_rootdir=CLF_ROOTDIR, ext='hdf'):
     
     merged_features = {}
     merged_addresses = {}
@@ -47,14 +281,17 @@ def load_datasets(dataset_ids, labels_to_sample, clf_rootdir=CLF_ROOTDIR):
         # load training addresses
 
         addresses_fp = DataManager.get_dataset_addresses_filepath(dataset_id=dataset_id)
-        download_from_s3_to_ec2(addresses_fp)
+        download_from_s3(addresses_fp)
         addresses_curr_dataset = load_pickle(addresses_fp)
         
         # Load training features
 
-        features_fp = DataManager.get_dataset_features_filepath(dataset_id=dataset_id)
-        download_from_s3_to_ec2(features_fp)
+        features_fp = DataManager.get_dataset_features_filepath(dataset_id=dataset_id, ext=ext)
+        download_from_s3(features_fp)
         features_curr_dataset = load_hdf_v2(features_fp).to_dict()
+        
+        if labels_to_sample is None:
+            labels_to_sample = features_curr_dataset.keys()
 
         for label in labels_to_sample:
             try:
@@ -100,10 +337,13 @@ def compute_predictions(H, abstain_label=-1):
 
     return predictions, no_decision_indices
 
-def compute_confusion_matrix(probs, labels, soft=False, normalize=True, abstain_label=-1):
+def compute_confusion_matrix(probs, labels, soft=False, normalize=True, abstain_label=-1, binary=True, decision_thresh=.5):
     """
     Functions: rearrange labels and predicting result. Do the statistics: [[tPt, tPf], [fPt, fPf]]. 
     Input format: probs: n_example x n_class. 
+    Args:
+        probs ((n_example, n_class)-ndarray of float): prediction probabilities
+        label ((n_example,)-ndarray of int): true example labels
     """
 
     n_labels = len(np.unique(labels))
@@ -123,7 +363,13 @@ def compute_confusion_matrix(probs, labels, soft=False, normalize=True, abstain_
                     M[tl, probs0] += 1
             else:
                 hard = np.zeros((n_labels, ))
-                hard[np.argmax(probs0)] = 1.
+                if binary:
+                    if probs0[0] > decision_thresh:
+                        hard[0] = 1.
+                    else:
+                        hard[1] = 1.
+                else:
+                    hard[np.argmax(probs0)] = 1.
                 M[tl] += hard
 
     if normalize:
@@ -193,8 +439,8 @@ def locate_patches_given_addresses_v2(addresses):
     patch_locations_all_inOriginalOrder = [patch_locations_all[i] for i in np.argsort(addressList_indices_all)]
     return patch_locations_all_inOriginalOrder
 
-def extract_patches_given_locations(stack, sec, locs=None, indices=None, grid_spec=None,
-                                    grid_locations=None, version='compressed'):
+def extract_patches_given_locations(stack=None, sec=None, img=None, locs=None, indices=None, grid_spec=None,
+                                    grid_locations=None, version='compressed', patch_size=None):
     """
     Return patches at given locations.
 
@@ -208,16 +454,19 @@ def extract_patches_given_locations(stack, sec, locs=None, indices=None, grid_sp
         list of patches.
     """
 
-    t = time.time()
-    img = DataManager.load_image(stack=stack, section=sec, version=version)
-    sys.stderr.write('Load image: %.2f seconds.\n' % (time.time() - t)) 
+    if img is None:
+        t = time.time()
+        img = DataManager.load_image(stack=stack, section=sec, version=version)
+        sys.stderr.write('Load image: %.2f seconds.\n' % (time.time() - t)) 
 
-    if grid_spec is None:
-        grid_spec = get_default_gridspec(stack)
+    if patch_size is None:
+        if grid_spec is None:
+            grid_spec = get_default_gridspec(stack)
 
-    patch_size, _, _, _ = grid_spec
+        patch_size, _, _, _ = grid_spec
+    
     half_size = patch_size/2
-
+    
     if indices is not None:
         assert locs is None, 'Cannot specify both indices and locs.'
         if grid_locations is None:
@@ -367,7 +616,7 @@ def label_regions_multisections(stack, region_contours, surround_margins=None):
     """
 
     # contours_df = read_hdf(ANNOTATION_ROOTDIR + '/%(stack)s/%(stack)s_annotation_v3.h5' % dict(stack=stack), 'contours')
-    contours_df, _ = DataManager.load_annotation_v3(stack=stack)
+    contours_df = DataManager.load_annotation_v4(stack=stack)
     contours = contours_df[(contours_df['orientation'] == 'sagittal') & (contours_df['downsample'] == 1)]
     contours = contours.drop_duplicates(subset=['section', 'name', 'side', 'filename', 'downsample', 'creator'])
     labeled_contours = convert_annotation_v3_original_to_aligned_cropped(contours, stack=stack)
@@ -395,7 +644,7 @@ def label_regions_multisections(stack, region_contours, surround_margins=None):
 
 def label_regions(stack, section, region_contours, surround_margins=None, labeled_contours=None):
     """
-    Identify regions that belong to each class.
+    Identify regions (could be non-square) that belong to each class.
     
     Returns:
         dict of {label: region indices in input region_contours}
@@ -406,7 +655,7 @@ def label_regions(stack, section, region_contours, surround_margins=None, labele
 
     if labeled_contours is None:
         # contours_df = read_hdf(ANNOTATION_ROOTDIR + '/%(stack)s/%(stack)s_annotation_v3.h5' % dict(stack=stack), 'contours')
-        contours_df, _ = DataManager.load_annotation_v3(stack=stack)
+        contours_df = DataManager.load_annotation_v4(stack=stack)
         contours = contours_df[(contours_df['orientation'] == 'sagittal') & (contours_df['downsample'] == 1)]
         contours = contours.drop_duplicates(subset=['section', 'name', 'side', 'filename', 'downsample', 'creator'])
         contours = convert_annotation_v3_original_to_aligned_cropped(contours, stack=stack)
@@ -434,9 +683,12 @@ def identify_regions_inside(region_contours, stack=None, image_shape=None, mask_
         - polygons can also be a list of (name, vertices) tuples.
     if shrinked to 30%% are completely within the polygons.
 
-    scheme: 1 - negative does not include other positive classes that are in the surround
-            2 - negative include other positive classes that are in the surround
+    Args:
+        surround_margins (list of int): list of surround margins in which patches are extracted, in unit of microns.
     """
+    
+    # rename for clarity
+    surround_margins_um = surround_margins
 
     n_regions = len(region_contours)
 
@@ -448,8 +700,8 @@ def identify_regions_inside(region_contours, stack=None, image_shape=None, mask_
     else:
         raise Exception('Polygon must be either dict or list.')
 
-    if surround_margins is None:
-        surround_margins = [100,200,300,400,500,600,700,800,900,1000]
+    if surround_margins_um is None:
+        surround_margins_um = [100,200,300,400,500,600,700,800,900,1000]
 
     # Identify patches in the foreground.
     region_centroids_tb = np.array([np.mean(cnt, axis=0)/32. for cnt in region_contours], np.int)
@@ -476,25 +728,23 @@ def identify_regions_inside(region_contours, stack=None, image_shape=None, mask_
 
     for label, poly in polygon_list:
 
-        for margin in surround_margins:
-        # margin = 500
+        for margin_um in surround_margins_um:
+
+            margin = margin_um / XY_PIXEL_DISTANCE_LOSSLESS
+        
             surround = Polygon(poly).buffer(margin, resolution=2)
-            # 500 pixels (original resolution, ~ 250um) away from landmark contour
 
             path = Path(list(surround.exterior.coords))
             indices_sur = np.where([np.count_nonzero(path.contains_points(cnt)) >=  len(cnt)*.7  for cnt in region_contours])[0]
 
             # surround classes do not include patches of any no-surround class
-            indices_allLandmarks[label+'_surround_'+str(margin)+'_noclass'] = np.setdiff1d(indices_sur, np.r_[indices_bg, indices_allInside])
-            # sys.stderr.write('%d patches in %s\n' % (len(indices_allLandmarks[label+'_surround_'+str(margin)+'_noclass']), label+'_surround_'+str(margin)+'_noclass'))
-            # print len(indices_allLandmarks[label+'_surround_noclass']), 'patches in', label+'_surround_noclass'
+            indices_allLandmarks[convert_to_surround_name(label, margin=margin_um, suffix='noclass')] = np.setdiff1d(indices_sur, np.r_[indices_bg, indices_allInside])
 
             for l, inds in indices_inside.iteritems():
                 if l == label: continue
                 indices = np.intersect1d(indices_sur, inds)
                 if len(indices) > 0:
-                    indices_allLandmarks[label+'_surround_'+str(margin)+'_'+l] = indices
-                    # sys.stderr.write('%d patches in %s\n' % (len(indices), label+'_surround_'+str(margin)+'_'+l))
+                    indices_allLandmarks[convert_to_surround_name(label, margin=margin_um, suffix=l)] = indices
 
         # Identify all foreground patches except the particular label's inside patches
         indices_allLandmarks[label+'_negative'] = np.setdiff1d(range(n_regions), np.r_[indices_bg, indices_inside[label]])
@@ -518,7 +768,7 @@ def locate_annotated_patches_v2(stack, grid_spec=None, sections=None, surround_m
     if grid_spec is None:
         grid_spec = get_default_gridspec(stack)
 
-    contours_df, _ = DataManager.load_annotation_v3(stack, annotation_rootdir=ANNOTATION_ROOTDIR)
+    contours_df = DataManager.load_annotation_v4(stack, annotation_rootdir=ANNOTATION_ROOTDIR)
     contours = contours_df[(contours_df['orientation'] == 'sagittal') & (contours_df['downsample'] == 1)]
     contours = contours.drop_duplicates(subset=['section', 'name', 'side', 'filename', 'downsample', 'creator'])
     contours_df = convert_annotation_v3_original_to_aligned_cropped(contours, stack=stack)
@@ -541,32 +791,45 @@ def locate_annotated_patches_v2(stack, grid_spec=None, sections=None, surround_m
     return DataFrame(patch_indices_allSections_allStructures)
 
 
-def generate_annotation_to_grid_indices_lookup(stack, by_human,
+def generate_annotation_to_grid_indices_lookup(stack, by_human, win_id,
                                                    stack_m=None, 
                                                     classifier_setting_m=None, 
                                                     classifier_setting_f=None, 
                                                     warp_setting=None, trial_idx=None,
-                                              surround_margins=None):
+                                              surround_margins=None, suffix=None, timestamp=None, prep_id=2,
+                                              ):
     """
     Load the structure annotation.
     Use the default grid spec.
     Find grid indices for each class label.
-    Save as a hdf file. Upload to S3.
+    
+    Args:
+        win_id (int): the spatial sample scheme
+    
+    Returns:
+        DataFrame: Columns are class labels and rows are section indices.
     """
     
-    contours_df, _ = DataManager.load_annotation_v3(stack=stack, by_human=by_human, 
+    windowing_properties = windowing_settings[win_id]
+    patch_size = windowing_properties['patch_size']
+    spacing = windowing_properties['spacing']
+    w, h = metadata_cache['image_shape'][stack]
+    half_size = patch_size/2
+    grid_spec = (patch_size, spacing, w, h)
+    
+    contours_df = DataManager.load_annotation_v4(stack=stack, by_human=by_human, 
                                                       stack_m=stack_m, 
                                                            classifier_setting_m=classifier_setting_m,
                                                           classifier_setting_f=classifier_setting_f,
                                                           warp_setting=warp_setting,
-                                                          trial_idx=trial_idx)
+                                                          trial_idx=trial_idx, suffix=suffix, timestamp=timestamp)
     contours = contours_df[(contours_df['orientation'] == 'sagittal') & (contours_df['downsample'] == 1)]
     contours = contours.drop_duplicates(subset=['section', 'name', 'side', 'filename', 'downsample', 'creator'])
     
     if by_human:    
         contours_df = convert_annotation_v3_original_to_aligned_cropped(contours, stack=stack)
     
-    download_from_s3(DataManager.get_thumbnail_mask_dir_v3(stack=stack), is_dir=True)
+    download_from_s3(DataManager.get_thumbnail_mask_dir_v3(stack=stack, prep_id=prep_id), is_dir=True)
     
     contours_grouped = contours_df.groupby('section')
 
@@ -576,9 +839,9 @@ def generate_annotation_to_grid_indices_lookup(stack, by_human,
         if is_invalid(sec=sec, stack=stack):
             continue
         polygons_this_sec = [(contour['name'], contour['vertices']) for contour_id, contour in cnt_group.iterrows()]
-        mask_tb = DataManager.load_thumbnail_mask_v3(stack=stack, section=sec)
+        mask_tb = DataManager.load_thumbnail_mask_v3(stack=stack, section=sec, prep_id=prep_id)
         patch_indices_allSections_allStructures[sec] = \
-        locate_patches_v2(grid_spec=get_default_gridspec(stack), mask_tb=mask_tb, polygons=polygons_this_sec, \
+        locate_patches_v2(grid_spec=grid_spec, mask_tb=mask_tb, polygons=polygons_this_sec, \
                           surround_margins=surround_margins)
     
     return DataFrame(patch_indices_allSections_allStructures).T
@@ -651,10 +914,14 @@ def locate_patches_v2(grid_spec=None, stack=None, patch_size=None, stride=None, 
             
     Args:
         grid_spec: If none, use the default grid spec.
+        surround_margins: list of surround margin for which patches are extracted, in unit of microns. Default: [100,200,...1000]
     Returns:
         If polygons are given, returns dict {label: list of grid indices}.
         Otherwise, return a list of grid indices.
     """
+    
+    # rename for clarity
+    surround_margins_um = surround_margins
 
     if grid_spec is None:
         grid_spec = get_default_gridspec(stack)
@@ -672,8 +939,8 @@ def locate_patches_v2(grid_spec=None, stack=None, patch_size=None, stride=None, 
     if stride is None:
         stride = grid_spec[1]
 
-    if surround_margins is None:
-        surround_margins = [100,200,300,400,500,600,700,800,900,1000]
+    if surround_margins_um is None:
+        surround_margins_um = [100,200,300,400,500,600,700,800,900,1000]
 
     sample_locations = grid_parameters_to_sample_locations(patch_size=patch_size, stride=stride, w=image_width, h=image_height)
     half_size = patch_size/2
@@ -736,12 +1003,12 @@ def locate_patches_v2(grid_spec=None, stack=None, patch_size=None, stride=None, 
         assert polygons is not None, 'Can only supply one of bbox or polygons.'
 
         # This means we require a patch to have 30% of its radius to be within the landmark boundary to be considered inside the landmark
-        margin = int(.3*half_size)
+        tolerance_margin = int(.3*half_size)
 
-        sample_locations_ul = sample_locations - (margin, margin)
-        sample_locations_ur = sample_locations - (-margin, margin)
-        sample_locations_ll = sample_locations - (margin, -margin)
-        sample_locations_lr = sample_locations - (-margin, -margin)
+        sample_locations_ul = sample_locations - (tolerance_margin, tolerance_margin)
+        sample_locations_ur = sample_locations - (-tolerance_margin, tolerance_margin)
+        sample_locations_ll = sample_locations - (tolerance_margin, -tolerance_margin)
+        sample_locations_lr = sample_locations - (-tolerance_margin, -tolerance_margin)
 
         indices_inside = {}
         indices_allLandmarks = {}
@@ -759,7 +1026,8 @@ def locate_patches_v2(grid_spec=None, stack=None, patch_size=None, stride=None, 
 
         for label, poly in polygon_list:
 
-            for margin in surround_margins:
+            for margin_um in surround_margins_um:
+                margin = margin_um / XY_PIXEL_DISTANCE_LOSSLESS
                 surround = Polygon(poly).buffer(margin, resolution=2)
 
                 path = Path(list(surround.exterior.coords))
@@ -769,13 +1037,13 @@ def locate_patches_v2(grid_spec=None, stack=None, patch_size=None, stride=None, 
                                         path.contains_points(sample_locations_ur))[0]
 
                 # surround classes do not include patches of any no-surround class
-                indices_allLandmarks[label+'_surround_'+str(margin)+'_noclass'] = np.setdiff1d(indices_sur, np.r_[indices_bg, indices_allInside])
+                indices_allLandmarks[convert_to_surround_name(label, margin=margin_um, suffix='noclass')] = np.setdiff1d(indices_sur, np.r_[indices_bg, indices_allInside])
                 
                 for l, inds in indices_inside.iteritems():
                     if l == label: continue
                     indices = np.intersect1d(indices_sur, inds)
                     if len(indices) > 0:
-                        indices_allLandmarks[label+'_surround_'+str(margin)+'_'+l] = indices
+                        indices_allLandmarks[convert_to_surround_name(label, margin=margin_um, suffix=l)] = indices
 
             # All foreground patches except the particular label's inside patches
             indices_allLandmarks[label+'_negative'] = np.setdiff1d(range(sample_locations.shape[0]), np.r_[indices_bg, indices_inside[label]])
@@ -787,9 +1055,13 @@ def locate_patches_v2(grid_spec=None, stack=None, patch_size=None, stride=None, 
 
     
     
-def generate_dataset_addresses(num_samples_per_label, stacks, labels_to_sample):
+def generate_dataset_addresses(num_samples_per_label, stacks, labels_to_sample, grid_indices_lookup_fps):
     """
     Generate patch addresses grouped by label.
+    
+    Args:
+        stacks (list of str):
+        grid_indices_lookup_fps (dict of str):
     
     Returns:
         addresses
@@ -802,11 +1074,36 @@ def generate_dataset_addresses(num_samples_per_label, stacks, labels_to_sample):
     for stack in stacks:
         
         t1 = time.time()
-        annotation_grid_indices_fn = os.path.join(ANNOTATION_ROOTDIR, stack, stack + '_annotation_grid_indices.h5')
-        grid_indices_per_label = read_hdf(annotation_grid_indices_fn, 'grid_indices')
+        
+        download_from_s3(grid_indices_lookup_fps[stack])
+        if not os.path.exists(grid_indices_lookup_fps[stack]):
+            raise Exception('Cannot find grid indices lookup. Use function generate_annotation_to_grid_indices_lookup to generate.')
+        try:
+            grid_indices_per_label = load_hdf_v2(grid_indices_lookup_fps[stack])
+        except:
+            grid_indices_per_label = read_hdf(grid_indices_lookup_fps[stack], 'grid_indices').T
+                
+        def convert_data_from_sided_to_unsided(data):
+            """
+            Args:
+                data: rows are sections, columns are SIDED labels.
+            """
+            new_data = defaultdict(dict)
+            for name_s in data.columns:
+                name_u = convert_to_unsided_label(name_s)
+                for sec, grid_indices in data[name_s].iteritems():
+                    new_data[name_u][sec] = grid_indices
+            return DataFrame(new_data)
+        
+        grid_indices_per_label = convert_data_from_sided_to_unsided(grid_indices_per_label)
+        
         sys.stderr.write('Read: %.2f seconds\n' % (time.time() - t1))
 
-        labels_this_stack = set(grid_indices_per_label.index) & set(labels_to_sample)
+        # Guarantee column is class name, row is section index.
+        assert isinstance(grid_indices_per_label.columns[0], str) and isinstance(grid_indices_per_label.index[0], int), \
+        "Must guarantee column is class name, row is section index."
+        
+        labels_this_stack = set(grid_indices_per_label.columns) & set(labels_to_sample)
 
         t1 = time.time()
         addresses_sec_idx = sample_locations(grid_indices_per_label, labels_this_stack, 

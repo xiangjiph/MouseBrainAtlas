@@ -11,6 +11,25 @@ from utilities2015 import *
 from metadata import *
 from data_manager import *
 
+def annotation_volume_to_score_volume(ann_vol, label_to_structure):
+    """
+    Convert an interger-valued annotation volume to a set of probability-valued score volumes.
+    
+    Args:
+        ann_vol (3D array of int): the annotation volume in which a voxel is an integer indicating the structure class
+    
+    Returns:
+        dict of 3D array of float: {structure name: volume}. Each voxel is a probability vector, where exactly one entry is 1.
+    """
+    
+    all_indices = set(np.unique(ann_vol)) - {0}
+    volume = {label_to_structure[i]: np.zeros_like(ann_vol, dtype=np.float16) for i in all_indices}
+    for i in all_indices:
+        mask = ann_vol == i
+        volume[label_to_structure[i]][mask] = 1.
+        del mask
+    return volume
+
 
 def contours_to_mask(contours, img_shape):
     """
@@ -31,17 +50,23 @@ def contours_to_mask(contours, img_shape):
     return final_mask
 
 
-def get_surround_volume(vol, distance=5, valid_level=0):
+def get_surround_volume(vol, distance=5, valid_level=0, prob=False):
     """
-    Return the volume with voxels surrounding active voxels in the input volume set to 1.
+    Return the volume with voxels surrounding the active voxels in the input volume set to 1 (prob=False) or 1 - vol (prob=True)
 
     Args:
+        vol (3D ndarray of float):
+            input volume. It is the whole space rather than a bbox around structure.
         valid_level (float):
             voxels with value above this level are regarded as active.
         distance (int):
             surrounding voxels are closer than distance (in unit of voxel) from any active voxels.
+        prob (bool):
+            if True, surround voxels are assigned 1-vol; if False, surround voxels are assigned 1.
     """
     from scipy.ndimage.morphology import distance_transform_edt
+    distance = int(np.round(distance))
+    
     eps = 5
     xmin, xmax, ymin, ymax, zmin, zmax = bbox_3d(vol)
     ydim, xdim, zdim = vol.shape
@@ -51,14 +76,63 @@ def get_surround_volume(vol, distance=5, valid_level=0):
     roi_xmax = min(xdim-1, xmax + distance + eps)
     roi_ymax = min(ydim-1, ymax + distance + eps)
     roi_zmax = min(zdim-1, zmax + distance + eps)
+    # print roi_ymin,roi_ymax+1, roi_xmin,roi_xmax+1, roi_zmin,roi_zmax+1
     roi = (vol > valid_level)[roi_ymin:roi_ymax+1, roi_xmin:roi_xmax+1, roi_zmin:roi_zmax+1]
 
     dist_vol = distance_transform_edt(roi == 0)
-    roi_surround_vol = (dist_vol > 0) & (dist_vol < distance)
+    roi_surround_vol = (dist_vol > 0) & (dist_vol < distance) # surround part is True, otherwise False.
 
     surround_vol = np.zeros_like(vol)
-    surround_vol[roi_ymin:roi_ymax+1, roi_xmin:roi_xmax+1, roi_zmin:roi_zmax+1] = roi_surround_vol
+    if prob:
+        surround_vol[roi_ymin:roi_ymax+1, roi_xmin:roi_xmax+1, roi_zmin:roi_zmax+1][roi_surround_vol] = 1. - vol[roi_ymin:roi_ymax+1, roi_xmin:roi_xmax+1, roi_zmin:roi_zmax+1][roi_surround_vol]
+    else:
+        surround_vol[roi_ymin:roi_ymax+1, roi_xmin:roi_xmax+1, roi_zmin:roi_zmax+1] = roi_surround_vol
+
     return surround_vol
+
+
+def get_surround_volume_v2(vol, bbox, distance=5, valid_level=0, prob=False):
+    """
+    Return the (volume, bbox) with voxels surrounding the active voxels in the input volume set to 1 (prob=False) or 1 - vol (prob=True)
+
+    Args:
+        vol (3D ndarray of float):
+            input volume. It is the whole space rather than a bbox around structure.
+        valid_level (float):
+            voxels with value above this level are regarded as active.
+        distance (int):
+            surrounding voxels are closer than distance (in unit of voxel) from any active voxels.
+        prob (bool):
+            if True, surround voxels are assigned 1-vol; if False, surround voxels are assigned 1.
+            
+    Returns:
+        (volume, bbox)
+    """
+    from scipy.ndimage.morphology import distance_transform_edt
+    distance = int(np.round(distance))
+    
+    eps = 5
+    xmin, xmax, ymin, ymax, zmin, zmax = bbox
+    # ydim, xdim, zdim = vol.shape
+    roi_xmin = xmin - distance - eps
+    roi_ymin = ymin - distance - eps
+    roi_zmin = zmin - distance - eps
+    roi_xmax = xmax + distance + eps
+    roi_ymax = ymax + distance + eps
+    roi_zmax = zmax + distance + eps
+    roi_bbox = (roi_xmin,roi_xmax,roi_ymin,roi_ymax,roi_zmin,roi_zmax)
+    # print roi_ymin,roi_ymax+1, roi_xmin,roi_xmax+1, roi_zmin,roi_zmax+1
+    vol_roi = crop_and_pad_volume(vol > valid_level, in_bbox=bbox, out_bbox=roi_bbox)
+
+    dist_vol = distance_transform_edt(vol_roi == 0)
+    roi_surround_vol = (dist_vol > 0) & (dist_vol < distance) # surround part is True, otherwise False.
+
+    if prob:
+        surround_vol = np.zeros_like(vol_roi)
+        surround_vol[roi_surround_vol] = 1. - vol_roi[roi_surround_vol]
+        return surround_vol, roi_bbox
+    else:
+        return roi_surround_vol, roi_bbox
 
 def points_inside_contour(cnt, num_samples=None):
     xmin, ymin = cnt.min(axis=0)
@@ -164,7 +238,7 @@ def get_landmark_range_limits_v2(stack=None, label_section_lookup=None, filtered
     else:
         d = set(label_section_lookup.keys()) & set(filtered_labels)
 
-    d_unsided = set(map(convert_name_to_unsided, d))
+    d_unsided = set(map(convert_to_unsided_label, d))
 
     for name_u in d_unsided:
 
@@ -550,6 +624,14 @@ def closest_to(point, poly):
 
 
 def average_multiple_volumes(volumes, bboxes):
+    """
+    Args:
+        volumes (list of 3D boolean arrays):
+        bboxes (list of tuples): each tuple is (xmin, xmax, ymin, ymax, zmin, zmax)
+
+    Returns:
+        (3D array, tuple): (averaged volume, bbox of averaged volume)
+    """
 
     overall_xmin, overall_ymin, overall_zmin = np.min([(xmin, ymin, zmin) for xmin, xmax, ymin, ymax, zmin, zmax in bboxes], axis=0)
     overall_xmax, overall_ymax, overall_zmax = np.max([(xmax, ymax, zmax) for xmin, xmax, ymin, ymax, zmin, zmax in bboxes], axis=0)
@@ -564,16 +646,19 @@ def average_multiple_volumes(volumes, bboxes):
 
 def interpolate_contours_to_volume(contours_grouped_by_pos=None, interpolation_direction=None, contours_xyz=None, return_voxels=False,
                                     return_contours=False, len_interval=20):
-    """Interpolate contours
+    """Interpolate contours.
 
-    Returns
-    -------
-    volume: a 3D binary array
-    bbox (tuple): (xmin, xmax, ymin, ymax, zmin, zmax)
+    Args:
+        return_contours (bool): If true, return resampled contours \{int: (n,2)-ndarrays\}. If false, return (volume, bbox) tuple.
+        return_voxels (bool): If true, return points inside contours.
 
-    If interpolation_direction == 'z', the points should be (x,y)
-    If interpolation_direction == 'x', the points should be (y,z)
-    If interpolation_direction == 'y', the points should be (x,z)
+    Returns:
+        volume (3D binary ndarray):
+        bbox (tuple): (xmin, xmax, ymin, ymax, zmin, zmax)
+
+        If interpolation_direction == 'z', the points should be (x,y)
+        If interpolation_direction == 'x', the points should be (y,z)
+        If interpolation_direction == 'y', the points should be (x,z)
     """
 
     if contours_grouped_by_pos is None:
@@ -589,7 +674,6 @@ def interpolate_contours_to_volume(contours_grouped_by_pos=None, interpolation_d
         elif interpolation_direction == 'x':
             for x,y,z in all_points:
                 contours_grouped_by_pos[x].append((y,z))
-
     else:
         # all_points = np.concatenate(contours_grouped_by_z.values())
         if interpolation_direction == 'z':
@@ -634,9 +718,16 @@ def interpolate_contours_to_volume(contours_grouped_by_pos=None, interpolation_d
 
 def get_interpolated_contours(contours_grouped_by_pos, len_interval):
     """
-    Snap minimum z to minimum int
-    Snap maximum z to maximum int
-    Return contours at integer levels
+    Interpolate contours at integer levels.
+    Snap minimum z to minimum integer.
+    Snap maximum z to maximum integer.
+
+    Args:
+        contours_grouped_by_pos (dict of (n,2)-ndarrays):
+        len_interval (int):
+
+    Returns:
+        contours at integer levels (dict of (n,2)-ndarrays):
     """
 
     contours_grouped_by_adjusted_pos = {}
@@ -696,9 +787,19 @@ def signed_curvatures(s, d=7):
     curvatures = (xp * ypp - yp * xpp)/np.sqrt(xp**2+yp**2)**3
     return curvatures, xp, yp
 
-def interpolate_contours(cnt1, cnt2, nlevels, len_interval_0 = 20):
+def interpolate_contours(cnt1, cnt2, nlevels, len_interval_0=20):
     '''
-    Returned arrays include cnt1 and cnt2 - length of array is nlevels.
+    Interpolate contours between (including) cnt1 and cnt2.
+
+    Args:
+        cnt1 ((n,2)-ndarray): contour 1
+        cnt2 ((n,2)-ndarray): contour 2
+        nlevels (int): number of resulting contours, including contour 1 and contour 2.
+        len_interval_0 (int): ?
+
+    Returns:
+        contours (list of (n,2)-ndarrays):
+            resulting contours including the first and last contours.
     '''
 
     # poly1 = Polygon(cnt1)
@@ -754,7 +855,6 @@ def interpolate_contours(cnt1, cnt2, nlevels, len_interval_0 = 20):
     yp2 = np.gradient(s2[:, 1], d)
     xp2i = np.gradient(s2i[:, 0], d)
     yp2i = np.gradient(s2i[:, 1], d)
-
 
     # using correlation over curvature values directly is much better than using correlation over signs
     # sign1 = np.sign(curv1)
@@ -834,7 +934,7 @@ def convert_annotation_v3_original_to_aligned(contour_df, stack):
 
     # import cPickle as pickle
     # Ts = pickle.load(open(thumbnail_data_dir + '/%(stack)s/%(stack)s_elastix_output/%(stack)s_transformsTo_anchor.pkl' % dict(stack=stack), 'r'))
-    Ts = DataManager.load_transforms(stack=stack, downsample_factor=1)
+    Ts = DataManager.load_transforms(stack=stack, downsample_factor=1, use_inverse=True)
 
     for cnt_id, cnt in contour_df[(contour_df['orientation'] == 'sagittal') & (contour_df['downsample'] == 1)].iterrows():
         fn = cnt['filename']
@@ -861,19 +961,8 @@ def convert_annotation_v3_original_to_aligned(contour_df, stack):
 def convert_annotation_v3_original_to_aligned_cropped(contour_df, stack):
 
     filename_to_section, _ = DataManager.load_sorted_filenames(stack)
-
-    # with open(thumbnail_data_dir + '/%(stack)s/%(stack)s_sorted_filenames.txt'%dict(stack=stack), 'r') as f:
-    #     fn_idx_tuples = [line.strip().split() for line in f.readlines()]
-    #     filename_to_section = {fn: int(idx) for fn, idx in fn_idx_tuples}
-    #     # sorted_filelist = {int(idx): fn for fn, idx in fn_idx_tuples}
-
     xmin, xmax, ymin, ymax, first_sec, last_sec = DataManager.load_cropbox(stack)
 
-    # with open(thumbnail_data_dir + '/%(stack)s/%(stack)s_cropbox.txt'%dict(stack=stack), 'r') as f:
-    #     xmin, xmax, ymin, ymax, first_sec, last_sec = map(int, f.readline().split())
-
-    # import cPickle as pickle
-    # Ts = pickle.load(open(thumbnail_data_dir + '/%(stack)s/%(stack)s_elastix_output/%(stack)s_transformsTo_anchor.pkl' % dict(stack=stack), 'r'))
     Ts = DataManager.load_transforms(stack=stack, downsample_factor=1, use_inverse=True)
 
     for cnt_id, cnt in contour_df[(contour_df['orientation'] == 'sagittal') & (contour_df['downsample'] == 1)].iterrows():
@@ -883,41 +972,34 @@ def convert_annotation_v3_original_to_aligned_cropped(contour_df, stack):
         sec = filename_to_section[fn]
         contour_df.loc[cnt_id, 'section'] = sec
 
-        # T = Ts[fn].copy()
-        # T[:2, 2] = T[:2, 2]*32
-        # Tinv = np.linalg.inv(T)
         Tinv = Ts[fn]
 
         n = len(cnt['vertices'])
 
         vertices_on_aligned_cropped = np.dot(Tinv, np.c_[cnt['vertices'], np.ones((n,))].T).T[:, :2] - (xmin*32, ymin*32)
-        # contour_df.loc[cnt_id, 'vertices'] = vertices_on_aligned_cropped
         contour_df.set_value(cnt_id, 'vertices', vertices_on_aligned_cropped)
 
-        label_position_on_aligned_cropped = np.dot(Tinv, np.r_[cnt['label_position'], 1])[:2] - (xmin*32, ymin*32)
-        contour_df.set_value(cnt_id, 'label_position', label_position_on_aligned_cropped)
-        # contour_df.loc[cnt_id, 'label_position'] = label_position_on_aligned_cropped.tolist()
+        if 'label_position' in cnt and cnt['label_position'] is not None:
+            label_position_on_aligned_cropped = np.dot(Tinv, np.r_[cnt['label_position'], 1])[:2] - (xmin*32, ymin*32)
+            contour_df.set_value(cnt_id, 'label_position', label_position_on_aligned_cropped)
 
     return contour_df
 
 def convert_annotation_v3_aligned_cropped_to_original(contour_df, stack):
+    """
+    Args:
+        contour_df (DataFrame): rows are polygon ids, columns are properties.
 
-    # with open(thumbnail_data_dir + '/%(stack)s/%(stack)s_sorted_filenames.txt'%dict(stack=stack), 'r') as f:
-    #     fn_idx_tuples = [line.strip().split() for line in f.readlines()]
-    #     # filename_to_section = {fn: int(idx) for fn, idx in fn_idx_tuples}
-    #     sorted_filelist = {int(idx): fn for fn, idx in fn_idx_tuples}
+    Returns:
+        DataFrame: a DataFrame containing converted polygons.
+    """
 
     filename_to_section, section_to_filename = DataManager.load_sorted_filenames(stack)
 
-    # with open(thumbnail_data_dir + '/%(stack)s/%(stack)s_cropbox.txt'%dict(stack=stack), 'r') as f:
-    #     xmin, xmax, ymin, ymax, first_sec, last_sec = map(int, f.readline().split())
-
     xmin, xmax, ymin, ymax, first_sec, last_sec = DataManager.load_cropbox(stack)
+    Ts = DataManager.load_transforms(stack=stack, downsample_factor=1, use_inverse=True)
 
-    # import cPickle as pickle
-    # Ts = pickle.load(open(thumbnail_data_dir + '/%(stack)s/%(stack)s_elastix_output/%(stack)s_transformsTo_anchor.pkl' % dict(stack=stack), 'r'))
-
-    Ts = DataManager.load_transforms(stack=stack, downsample_factor=1)
+    # print contour_df
 
     for cnt_id, cnt in contour_df[(contour_df['orientation'] == 'sagittal') & (contour_df['downsample'] == 1)].iterrows():
         sec = cnt['section']
@@ -926,9 +1008,6 @@ def convert_annotation_v3_aligned_cropped_to_original(contour_df, stack):
             continue
         contour_df.loc[cnt_id, 'filename'] = fn
 
-        # T = Ts[fn].copy()
-        # T[:2, 2] = T[:2, 2]*32
-
         T = np.linalg.inv(Ts[fn])
 
         n = len(cnt['vertices'])
@@ -936,7 +1015,8 @@ def convert_annotation_v3_aligned_cropped_to_original(contour_df, stack):
         vertices_on_aligned = np.array(cnt['vertices']) + (xmin*32, ymin*32)
         contour_df.set_value(cnt_id, 'vertices', np.dot(T, np.c_[vertices_on_aligned, np.ones((n,))].T).T[:, :2])
 
-        label_position_on_aligned = np.array(cnt['label_position']) + (xmin*32, ymin*32)
-        contour_df.set_value(cnt_id, 'label_position', np.dot(T, np.r_[label_position_on_aligned, 1])[:2])
+        if 'label_position' in cnt and cnt['label_position'] is not None:
+            label_position_on_aligned = np.array(cnt['label_position']) + (xmin*32, ymin*32)
+            contour_df.set_value(cnt_id, 'label_position', np.dot(T, np.r_[label_position_on_aligned, 1])[:2])
 
     return contour_df

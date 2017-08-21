@@ -50,25 +50,33 @@ class ZoomableBrowsableGraphicsScene(QGraphicsScene):
         # self.gview.installEventFilter(self)
         self.gview.viewport().installEventFilter(self)
 
-        # self.set_mode('idle')
-
-    # def set_mode(self, mode):
-    #     self.mode = mode
-
     def get_requested_index_and_section(self, i=None, sec=None):
+
         if i is None and sec is None:
             if hasattr(self, 'active_i'):
                 i = self.active_i
-                sec = self.data_feeder.sections[i]
+                if hasattr(self.data_feeder, 'sections'):
+                    sec = self.data_feeder.sections[i]
+                else:
+                    # sys.stderr.write('Data feeder \"%s\" has no concept of sections.\n' % self.data_feeder.name)
+                    pass
         elif sec is not None:
-            if sec in self.data_feeder.sections:
-                i = self.data_feeder.sections.index(sec)
+            if hasattr(self.data_feeder, 'sections'):
+                if sec in self.data_feeder.sections:
+                    i = self.data_feeder.sections.index(sec)
+                else:
+                    # sys.stderr.write('Data feeder \"%s\" has no concept of sections.\n' % self.data_feeder.name)
+                    pass
             else:
-                raise Exception('Section %d is not valid.' % sec)
+                # sys.stderr.write('Data feeder \"%s\" has no concept of sections.\n' % self.data_feeder.name)
+                pass
         elif i is not None:
-            sec = self.data_feeder.sections[i]
+            if hasattr(self.data_feeder, 'sections'):
+                sec = self.data_feeder.sections[i]
+            else:
+                # sys.stderr.write('Data feeder \"%s\" has no concept of sections.\n' % self.data_feeder.name)
+                pass
 
-        assert i is not None and sec is not None
         return i, sec
 
     def set_data_feeder(self, feeder):
@@ -85,6 +93,10 @@ class ZoomableBrowsableGraphicsScene(QGraphicsScene):
         #     self.active_image_updated.emit()
 
     def set_active_i(self, i, emit_changed_signal=True):
+        """
+        Set the active index variable.
+        Then update image to load the active index.
+        """
 
         # print self.id, 'goal active_i =', i, 'current active_i =', self.active_i
 
@@ -104,8 +116,6 @@ class ZoomableBrowsableGraphicsScene(QGraphicsScene):
             self.update_image()
         except Exception as e: # if failed, do not change active_i or active_section
             sys.stderr.write('Error setting index to %d\n' % i)
-            # self.active_i = old_i
-            # self.active_section = self.data_feeder.sections[old_i]
             self.pixmapItem.setVisible(False)
             raise e
 
@@ -136,28 +146,15 @@ class ZoomableBrowsableGraphicsScene(QGraphicsScene):
 
     def update_image(self, i=None, sec=None):
 
-        if sec is not None:
-            assert sec in self.data_feeder.sections
-            i = self.data_feeder.sections.index(sec)
-        elif i is None:
-            assert self.active_i is not None
-            i = self.active_i
-
-        image = self.data_feeder.retrive_i(i=i)
-
+        i, sec = self.get_requested_index_and_section(i=i, sec=sec)
+        image = self.data_feeder.retrieve_i(i=i)
         pixmap = QPixmap.fromImage(image)
-
         self.pixmapItem.setPixmap(pixmap)
         self.pixmapItem.setVisible(True)
-
 
     def set_downsample_factor(self, downsample):
         if self.data_feeder.downsample == downsample:
             return
-        # if self.downsample == downsample:
-        #     return
-        #
-        # self.downsample = downsample
         self.data_feeder.set_downsample_factor(downsample)
         self.update_image()
 
@@ -282,6 +279,7 @@ class SimpleGraphicsScene4(ZoomableBrowsableGraphicsScene):
 
 class SimpleGraphicsScene3(ZoomableBrowsableGraphicsScene):
     """
+    Used in the preprocess tool.
     Variant for sorted section gscene.
     Support context menu to specify FIRST, LAST, ANCHOR.
     Support adjusting the crop box.
@@ -291,30 +289,12 @@ class SimpleGraphicsScene3(ZoomableBrowsableGraphicsScene):
     first_section_set = pyqtSignal(int)
     last_section_set = pyqtSignal(int)
     anchor_set = pyqtSignal(int)
-    # move_forward_requested = pyqtSignal()
-    # move_backward_requested = pyqtSignal()
+    move_up_requested = pyqtSignal()
+    move_down_requested = pyqtSignal()
     # edit_transform_requested = pyqtSignal()
 
     def __init__(self, id, gview=None, parent=None):
         super(SimpleGraphicsScene3, self).__init__(id=id, gview=gview, parent=parent)
-
-        # self.bad_status_indicator = QGraphicsSimpleTextItem(QString('X'), scene=self)
-        # self.bad_status_indicator.setPos(50,50)
-        # self.bad_status_indicator.setScale(5)
-        # self.bad_status_indicator.setVisible(False)
-        # self.bad_status_indicator.setBrush(Qt.red)
-
-        # self.first_section_indicator = QGraphicsSimpleTextItem(QString('FIRST'), scene=self)
-        # self.first_section_indicator.setPos(50,50)
-        # self.first_section_indicator.setScale(5)
-        # self.first_section_indicator.setVisible(False)
-        # self.first_section_indicator.setBrush(Qt.red)
-        #
-        # self.last_section_indicator = QGraphicsSimpleTextItem(QString('LAST'), scene=self)
-        # self.last_section_indicator.setPos(50,50)
-        # self.last_section_indicator.setScale(5)
-        # self.last_section_indicator.setVisible(False)
-        # self.last_section_indicator.setBrush(Qt.red)
 
         self.box = QGraphicsRectItem(100,100,100,100,scene=self)
         self.box.setPen(QPen(Qt.red, 5))
@@ -338,7 +318,6 @@ class SimpleGraphicsScene3(ZoomableBrowsableGraphicsScene):
             ellipse.setPen(Qt.red)
             ellipse.setBrush(Qt.red)
             ellipse.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemClipsToShape | QGraphicsItem.ItemSendsGeometryChanges | QGraphicsItem.ItemSendsScenePositionChanges)
-            # ellipse.setZValue(99)
             ellipse.setVisible(False)
             ellipse.signal_emitter.moved.connect(self.corner_moved)
             ellipse.signal_emitter.pressed.connect(self.corner_pressed)
@@ -361,6 +340,7 @@ class SimpleGraphicsScene3(ZoomableBrowsableGraphicsScene):
         self.serving_ellipse = ellipse
 
         corner_label = self.corners.keys()[self.corners.values().index(ellipse)]
+        print corner_label, 'moved'
         if corner_label == 'll':
             self.corners['lr'].setY(new_y)
             self.corners['ul'].setX(new_x)
@@ -398,8 +378,8 @@ class SimpleGraphicsScene3(ZoomableBrowsableGraphicsScene):
 
         # is_bad = self.active_section in self.bad_sections
         # action_setBad = myMenu.addAction("Unmark as Bad" if is_bad else "Mark as Bad")
-        # action_moveForward = myMenu.addAction("Move forward")
-        # action_moveBackward = myMenu.addAction("Move backward")
+        action_moveUp = myMenu.addAction("Move up")
+        action_moveDown = myMenu.addAction("Move down")
 
         box_on = self.box.isVisible()
         action_toggleBox = myMenu.addAction("Show crop box" if not box_on else 'Hide crop box')
@@ -433,23 +413,20 @@ class SimpleGraphicsScene3(ZoomableBrowsableGraphicsScene):
         elif selected_action == action_setAnchor:
             self.anchor_set.emit(self.active_section)
 
-        # elif selected_action == action_moveForward:
-        #     self.move_forward_requested.emit()
-        # elif selected_action == action_moveBackward:
-        #     self.move_backward_requested.emit()
+        elif selected_action == action_moveUp:
+            self.move_up_requested.emit()
+        elif selected_action == action_moveDown:
+            self.move_down_requested.emit()
         # elif selected_action == action_edit_transform:
         #     self.edit_transform_requested.emit()
 
     def set_active_i(self, i, emit_changed_signal=True):
         super(SimpleGraphicsScene3, self).set_active_i(i, emit_changed_signal=True)
-        # self.bad_status_indicator.setVisible(self.active_section in self.bad_sections)
-
-        # self.first_section_indicator.setVisible(self.active_section == self.first_section)
-        # self.last_section_indicator.setVisible(self.active_section == self.last_section)
 
 
 class SimpleGraphicsScene2(ZoomableBrowsableGraphicsScene):
     """
+    Used in preprocess tool.
     Variant for slide position gscenes.
     """
 
