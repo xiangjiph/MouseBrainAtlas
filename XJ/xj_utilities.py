@@ -13,6 +13,9 @@ from data_manager import *
 from utilities2015 import *
 from metadata import *
 
+### Constants ###
+PI = 3.1415926535897932384626
+
 ### File management ###
 # save_folder_path = '/shared/MouseBrainAtlasXiang/XJ/Output/detect_cell_alternatives_output/';
 # sys.stderr.write('Path: '+save_folder_path)
@@ -186,6 +189,12 @@ def fun_crop_images(image, min_0, min_1, max_0, max_1, margin=0,im0max=10000,im1
 #     print((min_0, min_1, max_0, max_1))
     return crop_image
 
+def fun_mxmx_to_mmxx(min_0,max_0,min_1,max_1):
+    return (min_0, min_1, max_0, max_1)
+
+def fun_mmxx_to_mxmx(min_0, min_1, max_0, max_1):
+    return (min_0, max_0, min_1, max_1)
+
 def fun_scan_range(cloc,radius,im1max=10000,im0max=10000,o_form='1D'):
     cloc = np.array(cloc);
     min_0 = int(max(np.round(cloc - radius)[0],0))
@@ -210,6 +219,10 @@ def fun_similarity(oriIprops,nextIprops,distance_type='euclid'):
         if distance_type == 'euclid':
             difference = abs(oriIprops - nextIprops[i])/abs(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
         elif distance_type == 'area':
+            difference = abs(oriIprops - nextIprops[i])/(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
+        elif distance_type == 'perimeter':
+            difference = abs(oriIprops - nextIprops[i])/(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
+        elif distance_type == 'compactness':
             difference = abs(oriIprops - nextIprops[i])/(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
         elif distance_type == 'eccentricity':
             difference = abs(oriIprops - nextIprops[i])/(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
@@ -347,12 +360,17 @@ def fun_collect_typical_blobs(im_blob_prop,im_label, section, scan_parameters):
             temp_next_blob_props = {}
             for tempProp in prop:
                 temp_prop_value = []
-                for blobIndex in range(temp_num_blob):
-                    temp_prop_value.append(temp_next_sec_blob_prop[blobIndex][tempProp])
+                if tempProp=='relative_dict':
+                    for blobIndex in range(temp_num_blob):
+                        temp_prop_value.append(fun_local_distance(temp_next_sec_blob_prop[blobIndex]['centroid'],local_cloc))
+                elif tempProp in ['centroid','eccentricity','area','orientation','moments_hu','bbox','equivalent_diameter']:
+                    for blobIndex in range(temp_num_blob):
+                        temp_prop_value.append(temp_next_sec_blob_prop[blobIndex][tempProp])
+                elif tempProp=='compactness':
+                    temp_prop_value.append(temp_next_sec_blob_prop[blobIndex]['perimeter']**2 /
+                                           temp_next_sec_blob_prop[blobIndex]['area'] / (4*PI))
                 temp_next_blob_props[tempProp] = temp_prop_value
-            temp_next_blob_props['relative_dict'] = []
-            for blobIndex in range(temp_num_blob):
-                temp_next_blob_props['relative_dict'].append(fun_local_distance(temp_next_sec_blob_prop[blobIndex]['centroid'],local_cloc))
+               
 
             #### Construct similarity matrix ####
             temp_sim = {}
@@ -432,6 +450,10 @@ def fun_save_regionprops(regionprop_List, prop_to_save, stack, sec):
             tempProp_data = np.array(tempProp_data, np.float32)
         elif tempProp == 'equivalent_diameter':
             tempProp_data = np.array(tempProp_data, np.float32)
+        elif tempProp == 'compactness':
+            tempProp_data = np.array(tempProp_data, np.float32)
+        elif tempProp == 'perimeter':
+            tempProp_data = np.array(tempProp_data, np.int32)
 
         tempFp = get_typical_cell_data_filepath(what=tempProp,stack=stack,sec=sec)
         create_if_not_exists(os.path.dirname(tempFp))
@@ -462,3 +484,22 @@ def fun_vis_typical_blob(stack,sec,o_overlay_on_oriImage=True,o_save_image=True)
         return 'Image saved'
     else:
         return display_image(temp_vis_tyblob_in_sec)
+    
+    
+    
+    
+    
+def fun_polygon_bbox(vertice_list,margin=0):
+    vertice_list = np.array(vertice_list)
+    min1,min0 = np.min(vertice_list,axis=0) - margin
+    max1,max0 = np.max(vertice_list,axis=0) + margin
+    return (min0,min1,max0,max1)
+
+def fun_polygons_bbox(bbox_list,margin=0):
+    """bbox_list: a list of 4 vertices of bbox """
+    bbox_list = np.array(bbox_list)
+    min0 = np.min(bbox_list[:,0]) - margin
+    min1 = np.min(bbox_list[:,1]) - margin
+    max0 = np.max(bbox_list[:,2]) + margin
+    max1 = np.max(bbox_list[:,3]) + margin
+    return (min0,min1,max0,max1)

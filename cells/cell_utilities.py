@@ -216,6 +216,10 @@ def get_typical_cell_data_filepath(what, stack, sec=None, fn=None, ext=None):
         fn_template = '%(fn)s_blobEccentricity.bp'
     elif what == 'equivalent_diameter':
         fn_template = '%(fn)s_blobEquivalent_diameter.bp'        
+    elif what == 'compactness':
+        fn_template = '%(fn)s_blobCompactness.bp'   
+    elif what == 'perimeter':
+        fn_template = '%(fn)s_blobPerimeter.bp'   
     else:
         fn_template = '%(fn)s_' + what + '.' + ext
     # else:
