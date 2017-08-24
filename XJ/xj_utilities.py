@@ -16,6 +16,21 @@ from metadata import *
 ### Constants ###
 PI = 3.1415926535897932384626
 
+
+### Setting parameters###
+#scan_parameters = {}
+#scan_parameters['patch_size'] = 448
+#scan_parameters['patch_half_size'] = scan_parameters['patch_size']/2
+#scan_parameters['stride'] = 112
+#scan_parameters['o_clear_border'] = True
+#scan_parameters['o_relabel'] = True
+#scan_parameters['o_fix_scan_size'] = True
+#scan_parameters['scan_section_range'] = 1
+#scan_parameters['scan_size'] = 112
+#scan_parameters['scan_size_coeff'] = 5
+#scan_parameters['builtInProps'] = ['centroid','orientation', 'eccentricity','area','orientation','moments_hu','bbox','equivalent_diameter','label','local_centroid','major_axis_length','solidity','minor_axis_length','perimeter','solidity']
+#scan_parameters['prop_to_save'] = ['coords','moments_hu','centroid','area','eccentricity','equivalent_diameter']
+
 ### File management ###
 # save_folder_path = '/shared/MouseBrainAtlasXiang/XJ/Output/detect_cell_alternatives_output/';
 # sys.stderr.write('Path: '+save_folder_path)
@@ -486,9 +501,6 @@ def fun_vis_typical_blob(stack,sec,o_overlay_on_oriImage=True,o_save_image=True)
         return display_image(temp_vis_tyblob_in_sec)
     
     
-    
-    
-    
 def fun_polygon_bbox(vertice_list,margin=0):
     vertice_list = np.array(vertice_list)
     min1,min0 = np.min(vertice_list,axis=0) - margin
@@ -503,3 +515,49 @@ def fun_polygons_bbox(bbox_list,margin=0):
     max0 = np.max(bbox_list[:,2]) + margin
     max1 = np.max(bbox_list[:,3]) + margin
     return (min0,min1,max0,max1)
+
+
+
+def fun_regionprops_compactness(region_prop):
+    PI = 3.141592653589793
+    return region_prop['perimeter']**2/region_prop['area']/(4*PI)
+
+def fun_regionprops_dic(im_blob_prop,scan_parameters):
+    import collections
+    blob_prop_dic = collections.defaultdict(dict)
+    n_blobs = {tempSec: len(im_blob_prop[tempSec]) for tempSec in im_blob_prop.keys()}
+    for tempSec in im_blob_prop.keys():
+        for tempProp in scan_parameters['prop']:
+            tempPropValues = []
+            if tempProp in scan_parameters['builtInProps']:
+                for tempBlobID in range(n_blobs[tempSec]):
+                    tempPropValues.append(im_blob_prop[tempSec][tempBlobID][tempProp])
+            elif tempProp == 'compactness':
+                for tempBlobID in range(n_blobs[tempSec]):
+                    tempPropValues.append(fun_regionprops_compactness(im_blob_prop[tempSec][tempBlobID]))
+            blob_prop_dic[tempSec][tempProp] = np.array(tempPropValues)
+    return blob_prop_dic
+
+
+def fun_angle_arc_to_degree(angle):
+    PI = 3.141592653589793
+    return angle*180.0/PI
+
+def fun_angle_degree_to_arc(angle):
+    return float(angle)*PI/180.0
+
+def fun_angle_change_interval(angle,unit='arc'):
+
+    if unit == 'arc':
+        PI = 3.141592653589793
+        if (angle <= PI/2) and (angle>=0):
+            return angle
+        elif (- PI/2 <= angle) and (angle <0):
+            return angle + PI
+    elif unit == 'degree':
+        PI = 180
+        if (angle>=0) and (angle<=90):
+            return angle
+        elif (-90<=angle) and (angle<0):
+            return angle + PI
+        
