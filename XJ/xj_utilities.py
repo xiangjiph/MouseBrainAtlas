@@ -288,19 +288,24 @@ def fun_reconstruct_labeled_image(cell_global_coord,oriImL0, oriImL1, crop_range
         im_blob_prop = skimage.measure.regionprops(tempLabeledImage)
         return tempLabeledImage, im_blob_prop
 
-def fun_blobs_in_polygen(blob_centroid_list, contour_vertice_coor_array, crop_min_list=[0,0]):
-    contourPath = matplotlib.path.Path(contour_vertice_coor_array[:,[1,0]] - crop_min_list) # Yuncong uses (row, col) while numpy use 
+def fun_blobs_in_polygen(blob_centroid_list, contour_vertice_coor_array, crop_min_list=[0,0], coor_order='rc'):
+    """contour_vertice_coor_array = np.array([[point1_row, point1_col]; rc for Yuncong's data, cr for numpy"""
+    if coor_order == 'rc':
+        contourPath = matplotlib.path.Path(contour_vertice_coor_array[:,[1,0]] - crop_min_list) # Yuncong uses (row, col) while numpy use 
+    elif coor_order == 'cr':
+        contourPath = matplotlib.path.Path(contour_vertice_coor_array[:,[0,1]] - crop_min_list) # Yuncong uses (row, col) while numpy use 
     return contourPath.contains_points(blob_centroid_list)
 
-def fun_blobs_out_polygen(blob_centroid_list, contour_vertice_coor_array, crop_min_list=[0,0], margin=0):
-    contour_polygon = Polygon(contour_vertice_coor_array[:,[1,0]] - crop_min_list)
+def fun_blobs_out_polygen(blob_centroid_list, contour_vertice_coor_array, crop_min_list=[0,0], margin=0, coor_order='rc'):
+    """contour_vertice_coor_array = np.array([[point1_row, point1_col]; rc for Yuncong's data, cr for numpy"""
+    if coor_order == 'rc':
+        contour_polygon = Polygon(contour_vertice_coor_array[:,[1,0]] - crop_min_list)
+    elif coor_order == 'cr':
+        contour_polygon = Polygon(contour_vertice_coor_array[:,[0,1]] - crop_min_list)
     contour_polygon_with_margin = contour_polygon.buffer(margin, resolution=2)
     contour_polygon_with_margin = matplotlib.path.Path(list(contour_polygon_with_margin.exterior.coords))
     return np.logical_not(contour_polygon_with_margin.contains_points(blob_centroid_list))
-   
-    
-    
-    
+       
     
 def fun_collect_typical_blobs(im_blob_prop,im_label, section, scan_parameters):
     """ Output: typical_blobs: List of [section, blobID, im_blob_prop[section][blobID]];
