@@ -226,8 +226,10 @@ def fun_local_distance(blob_loc_tuple, local_cloc_tuple):
     r = ((blob_loc_tuple[0] - local_cloc_tuple[0]) ** 2 + ((blob_loc_tuple[1] - local_cloc_tuple[1]) ** 2) ) ** 0.5
     return r
 
-def fun_similarity(oriIprops,nextIprops,distance_type='euclid'):
+def fun_similarity(oriIprops,nextIprops,distance_type='euclid', returnForm='list'):
     similarity = [];
+    if type(nextIprops) != list:
+        nextIprops = [nextIprops]
     num_blob = len(nextIprops);
     pi = 3.1415926
     for i in range(num_blob):
@@ -255,7 +257,10 @@ def fun_similarity(oriIprops,nextIprops,distance_type='euclid'):
             diff_angle = abs(oriIprops - nextIprops[i])
             diff_angle = min(diff_angle, pi - diff_angle )
             difference = np.cos(diff_angle) 
-        similarity.append( 1 - difference) 
+        similarity.append( 1 - difference)
+     
+    if num_blob == 1:
+        similarity = similarity[0]
     return similarity
 
 def fun_reconstruct_labeled_image(cell_global_coord,oriImL0, oriImL1, crop_range=None, op_clear_border=True,op_relabel=True):
