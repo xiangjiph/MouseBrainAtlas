@@ -15,8 +15,8 @@ from metadata import *
 
 ### Constants ###
 PI = 3.1415926535897932384626
-
-
+REGIONPROPS_BUILTIN = ['centroid','orientation', 'eccentricity','area','moments_hu','bbox','equivalent_diameter','label','local_centroid','major_axis_length','solidity','minor_axis_length','perimeter']
+REGIONPROPS_Euclid_dis = ['centroid','eccentricity','area', 'equivalent_diameter', 'major_axis_length','solidity','minor_axis_length', 'perimeter', 'compactness', 'euclid']
 ### Setting parameters###
 #scan_parameters = {}
 #scan_parameters['patch_size'] = 448
@@ -226,28 +226,28 @@ def fun_local_distance(blob_loc_tuple, local_cloc_tuple):
     r = ((blob_loc_tuple[0] - local_cloc_tuple[0]) ** 2 + ((blob_loc_tuple[1] - local_cloc_tuple[1]) ** 2) ) ** 0.5
     return r
 
-def fun_similarity(oriIprops,nextIprops,distance_type='euclid', returnForm='list'):
+def fun_similarity(oriIprops,nextIprops,distance_type='euclid'):
+    """
+    Args: 
+        oriIprops: region property of single blob, can be float, int or numpy.ndarray
+        nextIprops: region property of single blob or a list/numpy.ndarray of region properties. Components should be the same type as oriIprops. 
+        distance_type: specify the way to measure the similarity, can be region property like 'area', 'moment_hu'. 
+    Returns:
+        similarity between oriIprops and nextIprops. A (list of) float(s) between [0,1], depends on the input nextIprops.
+    """
     similarity = [];
-    if type(nextIprops) != list:
+    if type(nextIprops) not in [list, np.ndarray]:
         nextIprops = [nextIprops]
+    if distance_type=='moments_hu':
+        if np.shape(nextIprops) == (7,):
+            nextIprops = [nextIprops]
     num_blob = len(nextIprops);
     pi = 3.1415926
     for i in range(num_blob):
-        if distance_type == 'euclid':
-            difference = abs(oriIprops - nextIprops[i])/abs(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
-        elif distance_type == 'area':
-            difference = abs(oriIprops - nextIprops[i])/(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
-        elif distance_type == 'perimeter':
-            difference = abs(oriIprops - nextIprops[i])/(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
-        elif distance_type == 'compactness':
-            difference = abs(oriIprops - nextIprops[i])/(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
-        elif distance_type == 'eccentricity':
-            difference = abs(oriIprops - nextIprops[i])/(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
+        if distance_type in REGIONPROPS_Euclid_dis:
+            difference = abs(oriIprops - nextIprops[i])/(abs(float(max(oriIprops, nextIprops[i]))) + 0.000000000001)
         elif distance_type == 'moments_hu':
             difference = np.abs(np.abs(oriIprops) - np.abs(np.array(nextIprops[i],dtype=np.float)))/np.abs( np.max(np.abs(np.vstack((oriIprops,nextIprops[i]))),axis=0) + 10**(-16)) 
-        
-        elif distance_type == 'equivalent_diameter':
-            difference = abs(oriIprops - nextIprops[i])/(float(max(oriIprops, nextIprops[i])) + 0.000000000001)
         elif distance_type == 'orientation':
             diff_angle = abs(oriIprops - nextIprops[i])
             diff_angle = min(diff_angle, pi - diff_angle )
