@@ -157,15 +157,15 @@ def get_cell_data_filepath(what, stack, sec=None, fn=None, ext=None):
     return fp
 
 
-def get_typical_cell_data_filepath(what, stack, sec=None, fn=None, ext=None):
+def get_typical_cell_data_filepath_v2(what, stack, sec=None, dataType='typical', fn=None, ext=None):
 
     if fn is None:
         assert sec is not None
-        fn = metadata_cache['sections_to_filenames'][stack][sec]
-        if fn in ['Placeholder', 'Nonexisting', 'Rescan']:
+        fileDir = metadata_cache['sections_to_filenames'][stack][sec]
+        if fileDir in ['Placeholder', 'Nonexisting', 'Rescan']:
             sys.stderr.write('This section is invalid.\n')
             return
-
+    fn = fileDir + '_%(dataType)s'%{'dataType':dataType}
     if what == 'orientation':
         fn_template = '%(fn)s_blobOrientations.bp'
     elif what == 'major':
@@ -224,12 +224,8 @@ def get_typical_cell_data_filepath(what, stack, sec=None, fn=None, ext=None):
         fn_template = '%(fn)s_' + what + '.' + ext
     # else:
     #     raise Exception('Not recognized.')
-
-    fp = os.path.join(TYPICAL_CELLS_ROOTDIR, stack, fn, fn_template % {'fn': fn})
+    fp = os.path.join(TYPICAL_CELLS_ROOTDIR, stack, fileDir, fn_template % {'fn':fn})
     return fp
-
-
-
 
 def load_cell_data(what, stack, sec=None, fn=None, ext=None):
 
@@ -240,9 +236,9 @@ def load_cell_data(what, stack, sec=None, fn=None, ext=None):
     data = load_data(fp)
     return data
 
-def load_typical_cell_data(what, stack, sec=None, fn=None, ext=None):
+def load_cell_data_v2(what, stack, sec=None, dataType ='normal', fn=None, ext=None):
 
-    fp = get_typical_cell_data_filepath(what, stack, sec=sec, fn=fn, ext=ext)
+    fp = get_cell_data_filepath_v2(what, stack,dataType=dataType,sec=sec, fn=fn, ext=ext)
     if fp is None:
         raise 'Cannot load data for section %d.'
     download_from_s3(fp)
