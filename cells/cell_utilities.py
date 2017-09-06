@@ -157,7 +157,7 @@ def get_cell_data_filepath(what, stack, sec=None, fn=None, ext=None):
     return fp
 
 
-def get_typical_cell_data_filepath_v2(what, stack, sec=None, dataType='typical', fn=None, ext=None):
+def get_typical_cell_data_filepath(what, stack, sec=None, dataType='typical', fn=None, ext=None):
 
     if fn is None:
         assert sec is not None
@@ -220,6 +220,10 @@ def get_typical_cell_data_filepath_v2(what, stack, sec=None, dataType='typical',
         fn_template = '%(fn)s_blobCompactness.bp'   
     elif what == 'perimeter':
         fn_template = '%(fn)s_blobPerimeter.bp'   
+    elif what == 'TBID':
+        fn_template = '%(fn)s_blobTBID.bp'   
+    elif what == 'section':
+        fn_template = '%(fn)s_blobSection.bp'   
     else:
         fn_template = '%(fn)s_' + what + '.' + ext
     # else:
@@ -236,7 +240,7 @@ def load_cell_data(what, stack, sec=None, fn=None, ext=None):
     data = load_data(fp)
     return data
 
-def load_cell_data_v2(what, stack, sec=None, dataType ='normal', fn=None, ext=None):
+def load_typical_cell_data(what, stack, sec=None, dataType ='typical', fn=None, ext=None):
 
     fp = get_cell_data_filepath_v2(what, stack,dataType=dataType,sec=sec, fn=fn, ext=ext)
     if fp is None:

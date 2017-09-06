@@ -456,11 +456,12 @@ def fun_load_data_collect_typical_blobs(sec, scan_parameters,o_save=False):
 
 
 
-def fun_save_regionprops(regionprop_List, prop_to_save, stack, sec):
+def fun_save_regionprops(regionprop_List, prop_to_save, stack, sec, dataType='typical'):
     for tempProp in prop_to_save:
         tempProp_data = []
         for record in regionprop_List:
             tempProp_data.append(record[tempProp])
+            
         if tempProp == 'coords':
             tempProp_data = map(lambda data: np.array(data, dtype=np.int16), tempProp_data)
         elif tempProp == 'moments_hu':
@@ -480,7 +481,7 @@ def fun_save_regionprops(regionprop_List, prop_to_save, stack, sec):
         elif tempProp == 'perimeter':
             tempProp_data = np.array(tempProp_data, np.int32)
 
-        tempFp = get_typical_cell_data_filepath(what=tempProp,stack=stack,sec=sec)
+        tempFp = get_typical_cell_data_filepath(what=tempProp,stack=stack,sec=sec, dataType=dataType)
         create_if_not_exists(os.path.dirname(tempFp))
         if tempFp.endswith('.hdf'):
             save_hdf_v2(tempProp_data, fn=tempFp)
@@ -533,6 +534,9 @@ def fun_regionprops_compactness(region_prop):
     return region_prop['perimeter']**2/region_prop['area']/(4*PI)
 
 def fun_regionprops_dic(im_blob_prop,scan_parameters):
+    """im_blob_prop: a dict of lists of regionprops;
+       scan_parameters: a dict specifying regionprops to get
+    """
     import collections
     blob_prop_dic = collections.defaultdict(dict)
     n_blobs = {tempSec: len(im_blob_prop[tempSec]) for tempSec in im_blob_prop.keys()}
@@ -570,4 +574,11 @@ def fun_angle_change_interval(angle,unit='arc'):
             return angle
         elif (-90<=angle) and (angle<0):
             return angle + PI
+    
+def fun_get_valid_section_list(stack):
+    valid_section_list = []
+    for sec in range(*metadata_cache['section_limits'][stack]):
+        if not is_invalid(sec=sec, stack=stack):
+            valid_section_list.append(sec)
+    return valid_section_list
         
