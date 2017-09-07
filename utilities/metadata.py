@@ -138,7 +138,6 @@ elif hostname.startswith('ip'):
         CELLS_ROOTDIR = os.path.join(ROOT_DIR, 'CSHL_cells_v2')
     
     TYPICAL_CELLS_ROOTDIR = os.path.join(ROOT_DIR, 'blob_matching_atlas', 'typical_cells')
-    FALSE_TYPICAL_CELLS_ROOTDIR = os.path.join(ROOT_DIR, 'blob_matching_atlas', 'false_typical_cells')
     DETECTED_CELLS_ROOTDIR = os.path.join(CELLS_ROOTDIR, 'detected_cells')
     CELL_EMBEDDING_ROOTDIR = os.path.join(CELLS_ROOTDIR, 'embedding')
     D3JS_ROOTDIR = os.path.join(CELLS_ROOTDIR, 'd3js')

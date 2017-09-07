@@ -157,7 +157,7 @@ def get_cell_data_filepath(what, stack, sec=None, fn=None, ext=None):
     return fp
 
 
-def get_typical_cell_data_filepath(what, stack, sec=None, dataType='typical', fn=None, ext=None):
+def get_typical_cell_data_filepath(what, stack, sec=None, dataFolderName=None, dataType='typical', fn=None, ext=None):
 
     if fn is None:
         assert sec is not None
@@ -228,7 +228,10 @@ def get_typical_cell_data_filepath(what, stack, sec=None, dataType='typical', fn
         fn_template = '%(fn)s_' + what + '.' + ext
     # else:
     #     raise Exception('Not recognized.')
-    fp = os.path.join(TYPICAL_CELLS_ROOTDIR, stack, fileDir, fn_template % {'fn':fn})
+    if dataFolderName is not None:
+        fp = os.path.join(TYPICAL_CELLS_ROOTDIR, stack, dataFolderName, fileDir, fn_template % {'fn':fn})
+    elif dataFolderName == None:
+        fp = os.path.join(TYPICAL_CELLS_ROOTDIR, stack, fileDir, fn_template % {'fn':fn})
     return fp
 
 def load_cell_data(what, stack, sec=None, fn=None, ext=None):
@@ -240,9 +243,9 @@ def load_cell_data(what, stack, sec=None, fn=None, ext=None):
     data = load_data(fp)
     return data
 
-def load_typical_cell_data(what, stack, sec=None, dataType ='typical', fn=None, ext=None):
+def load_typical_cell_data(what, stack, sec=None, dataFolderName=None, dataType ='typical', fn=None, ext=None):
 
-    fp = get_cell_data_filepath_v2(what, stack,dataType=dataType,sec=sec, fn=fn, ext=ext)
+    fp = get_typical_cell_data_filepath(what=what, stack=stack, dataFolderName=dataFolderName, dataType=dataType,sec=sec, fn=fn, ext=ext)
     if fp is None:
         raise 'Cannot load data for section %d.'
     download_from_s3(fp)
