@@ -456,7 +456,7 @@ def fun_load_data_collect_typical_blobs(sec, scan_parameters,o_save=False):
 
 
 
-def fun_save_regionprops(regionprop_List, prop_to_save, stack, sec, dataType='typical'):
+def fun_save_regionprops(regionprop_List, prop_to_save, stack, sec, dataType='typical', dataFolderName=None):
     for tempProp in prop_to_save:
         tempProp_data = []
         for record in regionprop_List:
@@ -481,7 +481,7 @@ def fun_save_regionprops(regionprop_List, prop_to_save, stack, sec, dataType='ty
         elif tempProp == 'perimeter':
             tempProp_data = np.array(tempProp_data, np.int32)
 
-        tempFp = get_typical_cell_data_filepath(what=tempProp,stack=stack,sec=sec, dataType=dataType)
+        tempFp = get_typical_cell_data_filepath(what=tempProp,stack=stack,sec=sec, dataType=dataType, dataFolderName=dataFolderName)
         create_if_not_exists(os.path.dirname(tempFp))
         if tempFp.endswith('.hdf'):
             save_hdf_v2(tempProp_data, fn=tempFp)
