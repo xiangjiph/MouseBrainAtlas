@@ -42,6 +42,7 @@ def fun_create_folder(save_folder_path=None):
     else:
         os.makedirs(save_folder_path)
         sys.stderr.write('Folder created: ' + save_folder_path)
+    return save_folder_path
 
 def fun_construct_filename(define_list):
     """
