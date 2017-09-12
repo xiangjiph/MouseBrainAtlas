@@ -226,7 +226,7 @@ def fun_local_distance(blob_loc_tuple, local_cloc_tuple):
     r = ((blob_loc_tuple[0] - local_cloc_tuple[0]) ** 2 + ((blob_loc_tuple[1] - local_cloc_tuple[1]) ** 2) ) ** 0.5
     return r
 
-def fun_similarity(oriIprops,nextIprops,distance_type='euclid'):
+def fun_similarity(oriIprops,nextIprops,distance_type='euclid',return_type='list'):
     """
     Args: 
         oriIprops: region property of single blob, can be float, int or numpy.ndarray
@@ -258,10 +258,11 @@ def fun_similarity(oriIprops,nextIprops,distance_type='euclid'):
             diff_angle = min(diff_angle, pi - diff_angle )
             difference = np.cos(diff_angle) 
         similarity.append( 1 - difference)
-     
-    if num_blob == 1:
+    if return_type == 'list':
+        return similarity
+    elif num_blob == 1:
         similarity = similarity[0]
-    return similarity
+        return similarity
 
 def fun_reconstruct_labeled_image(cell_global_coord,oriImL0, oriImL1, crop_range=None, op_clear_border=True,op_relabel=True):
     """ cell_global_coord = list of coordinate of the global index position of all the pixel in each blob

@@ -224,6 +224,8 @@ def get_typical_cell_data_filepath(what, stack, sec=None, dataFolderName=None, d
         fn_template = '%(fn)s_blobTBID.bp'   
     elif what == 'section':
         fn_template = '%(fn)s_blobSection.bp'   
+    elif what == 'solidity':
+        fn_template = '%(fn)s_blobSolidity.bp'   
     else:
         fn_template = '%(fn)s_' + what + '.' + ext
     # else:
