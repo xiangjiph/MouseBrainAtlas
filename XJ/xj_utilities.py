@@ -584,3 +584,16 @@ def fun_get_valid_section_list(stack):
             valid_section_list.append(sec)
     return valid_section_list
         
+###Optimization###
+def fun_find_max(x,y, mode='returnAll'):
+    x = np.array(x)
+    y = np.array(y)
+    maxY = np.max(y)
+    maxX = x[y == maxY]
+    if mode == 'returnAll':
+        return maxX, maxY
+    elif mode == 'returnFirst':
+        if type(maxX) == np.ndarray:
+            return maxX[0], maxY
+        
+        
