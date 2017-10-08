@@ -17,6 +17,8 @@ from metadata import *
 PI = 3.1415926535897932384626
 REGIONPROPS_BUILTIN = ['centroid','orientation', 'eccentricity','area','moments_hu','bbox','equivalent_diameter','label','local_centroid','major_axis_length','solidity','minor_axis_length','perimeter']
 REGIONPROPS_Euclid_dis = ['centroid','eccentricity','area', 'equivalent_diameter', 'major_axis_length','solidity','minor_axis_length', 'perimeter', 'compactness', 'euclid']
+
+STRUCTURES_LIST = ['10N','12N', '3N', '4N', '5N', '6N', '7N', '7n', 'AP', 'Amb', 'DC', 'LC', 'LPB', 'LRt', 'PBG', 'Pn', 'RMC', 'RtTg', 'SC', 'SNC', 'SNR', 'Sp5C', 'Sp5I', 'Sp5O', 'Tz', 'VCA', 'VCP', 'VLL']
 ### Setting parameters###
 #scan_parameters = {}
 #scan_parameters['patch_size'] = 448
