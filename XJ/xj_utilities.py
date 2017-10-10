@@ -598,4 +598,181 @@ def fun_find_max(x,y, mode='returnAll'):
         if type(maxX) == np.ndarray:
             return maxX[0], maxY
         
+##############
+def fun_similar_ratio(data, threshold_simu):
+    return np.float(np.count_nonzero(data>threshold_simu))/len(data)
+
+def fun_ROC(positive_data, negative_data, scaning_step=0.025):
+    """ Input: positive_data, negative_data are 1D numpy.array
+    Output: ranges, posCum, negCum"""
+    tempPosCum = []
+    tempNegCum = []
+    tempRanges = np.arange(0,1+scaning_step,scaning_step)
+    for threshold_simu in tempRanges:
+        tempPosCum.append(fun_similar_ratio(positive_data, threshold_simu=threshold_simu))
+        tempNegCum.append(fun_similar_ratio(negative_data, threshold_simu=threshold_simu))
+    return tempRanges, tempPosCum, tempNegCum
+
+def fun_find_max(x,y, mode='returnAll'):
+    x = np.array(x)
+    y = np.array(y)
+    maxY = np.max(y)
+    maxX = x[y == maxY]
+    if mode == 'returnAll':
+        return maxX, maxY
+    elif mode == 'returnFirst':
+        if type(maxX) == np.ndarray:
+            return maxX[0], maxY
+
+def fun_find_max_similarity_difference(data_range, posCum, negCum):
+    difference = np.array(posCum) - np.array(negCum)
+    threshold_sim, maxSimDiff = fun_find_max(data_range, difference)
+    return threshold_sim, maxSimDiff
+
+def fun_SGD_score(weight, positive_training_data, negative_training_data):
+    scan_range, posCum, negCum = fun_ROC(np.dot(positive_training_data, weight), np.dot(negative_training_data, weight) )
+    _, maxSimDiff = fun_find_max_similarity_difference(scan_range, posCum, negCum)
+    return maxSimDiff
+
+def fun_SGD_score_v2(weight, positive_training_data, negative_training_data):
+    scan_range, posCum, negCum = fun_ROC(np.dot(positive_training_data, weight), np.dot(negative_training_data, weight) )
+    threshold, maxSimDiff = fun_find_max_similarity_difference(scan_range, posCum, negCum)
+    return threshold, maxSimDiff    
+    
+def fun_gradient_descent(learning_vectors, initial_score, initial_weight,positive_data, negative_data, random_sample_num=None):
+    tempMaxSimDiff = -1
+    if random_sample_num is not None:
+        num_positive_data = np.shape(positive_data)[0]
+        num_negative_data = np.shape(negative_data)[0]
+        positive_data_idx = np.arange(0, num_positive_data, dtype=np.int32)
+        negative_data_idx = np.arange(0, num_negative_data, dtype=np.int32)
+#     numStep = 0
+    while True:
+        if (random_sample_num is not None) and (num_positive_data > random_sample_num):
+            selected_positive_idx = np.random.choice(positive_data_idx, size=random_sample_num, replace=False)
+            positive_training_data = positive_data[selected_positive_idx]
+        else:
+            positive_training_data = positive_data
+        if (random_sample_num is not None) and (num_negative_data > random_sample_num):
+            selected_negative_idx = np.random.choice(negative_data_idx, size=random_sample_num, replace=False)
+            negative_training_data = negative_data[selected_negative_idx]
+        else:
+            negative_training_data = negative_data
+            
+        tempMaxSimDiffList = []
+        tempWeightList = []
+        for learning_vector in learning_vectors:
+            # Update weight, with nonegative normalized constrains
+            tempWeight = initial_weight.copy() + learning_vector
+            tempWeight[tempWeight<0] = 0
+            tempWeight = tempWeight/np.sum(tempWeight)
+            tempWeightList.append(tempWeight)
+            tempMaxSimDiffList.append(fun_SGD_score(tempWeight, positive_training_data, negative_training_data))
+        tempWeight, tempMaxSimDiff = fun_find_max(x=tempWeightList, y=tempMaxSimDiffList,mode='returnFirst')
+        if tempMaxSimDiff > initial_score:
+#             numStep +=1
+            initial_score = tempMaxSimDiff
+            initial_weight = tempWeight
+        else:
+#             print('Reach Local maximum. Break.')
+            break
+    return initial_score, initial_weight 
+    
+    
+def fun_get_weight_vec_length(training_props):
+    prop_length = {}
+    prop_length['area'] = 1
+    prop_length['orientation'] = 1
+    prop_length['eccentricity'] = 1
+    prop_length['moments_hu'] = 7
+    prop_length['equivalent_diameter'] = 1
+    prop_length['major_axis_length'] = 1
+    prop_length['solidity'] = 1
+    prop_length['minor_axis_length'] = 1
+    prop_length['perimeter'] = 1
+    prop_length['compactness'] = 1
+    weight_vec_length = 0
+    for prop in training_props:
+        weight_vec_length += prop_length[prop]
         
+    return weight_vec_length
+
+
+def fun_optimize_weights_with_SGD(positive_training_data, negative_training_data, learning_parameters, structure_name=None):
+    training_props = learning_parameters['training_props']
+    sim_vector_length = learning_parameters['weight_length']
+    if structure_name==None:
+        structure_name = learning_parameters['structure_name']
+    
+    stack = learning_parameters['stack']    
+    
+    save_root_folder = learning_parameters['save_root_folder']
+    save_info_method = learning_parameters['method'] 
+    save_data_set = learning_parameters['data_set']
+    
+    training_props = learning_parameters['training_props']
+    numTrial = learning_parameters['numTrial']
+    learning_rate = learning_parameters['learning_rate']
+    max_sample_num = learning_parameters['max_sample_num']
+    positive_data = positive_training_data[structure_name]
+    negative_data = negative_training_data[structure_name]
+
+
+
+
+    temp_matrix = np.eye(sim_vector_length, dtype=np.float)
+    learning_vectors = np.hstack(tuple([temp_matrix * learning_rate, temp_matrix * -learning_rate]))
+    learning_vectors = np.split(learning_vectors,sim_vector_length*2, axis=1)
+
+    report_times = numTrial/20
+    data_maxSimDiff = []
+    data_weight = []
+    for idx in range(numTrial):
+        if idx % report_times == 0:
+            print('Structure %s %f finished.'%(structure_name, float(idx)/numTrial))
+        weight = np.random.random(size=[sim_vector_length, 1])
+        weight = weight/np.sum(weight)
+        scan_range, posCum, negCum = fun_ROC(np.dot(positive_data, weight), np.dot(negative_data, weight) )
+        threshold_sim, maxSimDiff = fun_find_max_similarity_difference(scan_range, posCum, negCum)
+        optimized_maxSimDiff, optimized_weight = fun_gradient_descent(learning_vectors=learning_vectors,
+                                                                      initial_score=maxSimDiff, 
+                                                                      initial_weight=weight , 
+                                                                      positive_data=positive_data, 
+                                                                      negative_data=negative_data,random_sample_num=max_sample_num)
+        data_maxSimDiff.append(optimized_maxSimDiff)
+        data_weight.append(optimized_weight)
+
+    # Save data    
+    fp = os.path.join(save_root_folder, stack, save_data_set , structure_name, save_info_method)
+    fun_create_folder(fp)
+    bp.pack_ndarray_file(np.array(data_weight), filename= os.path.join(fp, 'weight.bp'))
+    bp.pack_ndarray_file(np.array(data_maxSimDiff), filename=os.path.join(fp, 'maxSimDiff.bp'))
+    save_pickle(learning_parameters, fp=os.path.join(fp, 'learning_parameters.pkl'))
+
+    
+def fun_get_learning_data_path(what, stack, data_set, structure_name, method, ext=None):
+    LERANING_ROOT_PATH = '/shared/blob_matching_atlas/training_weight'
+    if what=='weight':
+        fn = 'weight.bp'
+    elif what=='learning_parameters':
+        fn = 'learning_parameters.pkl'
+    elif what=='maxSimDiff':
+        fn = 'maxSimDiff.bp'
+    else:
+        assert ext is not None, 'Please specify extension'
+        fn = what + ext
+    
+    fp = os.path.join(LERANING_ROOT_PATH, stack, data_set, structure_name, method, fn)
+    return fp
+
+
+def load_training_weight(what, stack, data_set, structure_name, method, ext=None):
+    fp = fun_get_learning_data_path(what, stack, data_set, structure_name, method, ext=None)
+    print('Loading %s'%fp)
+    if not os.path.isfile(fp):
+        sys.stderr.write('Warnning: File does not exist in the shared folder. Try to download from s3...\n')
+        try:
+            download_from_s3(fp)
+        except:
+            sys.stderr.write('Loading file %s failed.\n'%fp)
+    return load_data(fp)
