@@ -207,6 +207,12 @@ def fun_crop_images(image, min_0, min_1, max_0, max_1, margin=0,im0max=10000,im1
 #     print((min_0, min_1, max_0, max_1))
     return crop_image
 
+def fun_crop_images_2dInput(image, contour, im0max=10000,im1max=10000):
+    min_0, min_1 = np.min(contour, axis=0);
+    max_0, max_1 = np.max(contour, axis=0);
+    return image[min_0:max_0, min_1:max_1]
+
+
 def fun_mxmx_to_mmxx(min_0,max_0,min_1,max_1):
     return (min_0, min_1, max_0, max_1)
 
@@ -217,8 +223,8 @@ def fun_scan_range(cloc,radius,im1max=10000,im0max=10000,o_form='1D'):
     cloc = np.array(cloc);
     min_0 = int(max(np.round(cloc - radius)[0],0))
     min_1 = int(max(np.round(cloc - radius)[1],0))
-    max_0 = int(min(np.round(cloc + radius)[0],im0max))
-    max_1 = int(min(np.round(cloc + radius)[1],im1max))
+    max_0 = int(min(np.round(cloc + radius)[0] + 1 ,im0max))
+    max_1 = int(min(np.round(cloc + radius)[1] + 1 ,im1max))
     local_cloc = (int(cloc[0] - min_0), int(cloc[1] - min_1))
     if o_form == '1D':
         return (min_0, min_1, max_0, max_1), local_cloc
