@@ -782,3 +782,13 @@ def load_training_weight(what, stack, data_set, structure_name, method, ext=None
         except:
             sys.stderr.write('Loading file %s failed.\n'%fp)
     return load_data(fp)
+
+def fun_image_overlay_square(image, box_centroid,width, figsize=(15,15)):
+    """Overlay a square box onto the image. box_centroid = (x,y) = (idx1, idx0) in numpy"""
+    import matplotlib.pyplot as plt
+    import matplotlib
+    fig, ax = plt.subplots(1, figsize=figsize);
+    ax.imshow(image);
+    rect = matplotlib.patches.Rectangle(box_centroid,width=width, height=width, linewidth=1, edgecolor='r', facecolor='none')
+    ax.add_patch(rect)
+    plt.show()
